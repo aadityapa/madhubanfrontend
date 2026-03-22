@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Madhuban 360",
+    "slug": "madhuban360",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "madhuban360",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splashscreen.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#152B59"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.madhuban360.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.madhuban360.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router"]
+  }
+}

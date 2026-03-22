@@ -1,0 +1,51 @@
+.admin-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.admin-shell__sidebar {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  padding: 1.25rem 1rem;
+}
+
+.admin-shell__brand {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+  margin-bottom: 1.25rem;
+}
+
+.admin-shell__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-shell__link {
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.admin-shell__link--active {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--color-accent);
+}
+
+.admin-shell__main {
+  padding: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+  }
+  .admin-shell__sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+}

@@ -1,0 +1,15 @@
+---
+description: Madhuban 360 design fidelity — Figma, theme tokens, and screen references
+globs:
+  - "apps/**"
+  - "packages/**"
+---
+
+# Madhuban 360 — design and UI rules
+
+- **Product context:** Read [PRD.md](PRD.md) for platforms (admin web vs field mobile) and roles.
+- **Before implementing UI:** Check `@madhuban/theme` (and `tokens.css` on web). Prefer **semantic tokens** (`primary`, `surface`, `accent`, etc.); do not add raw hex in feature code unless you are first adding a token.
+- **When unsure about typography, colors, spacing, radius, or layout:** Use the **Figma MCP** (`get_figma_data`) instead of guessing from screenshots. **Canonical file:** [Madhuban 360 Figma](https://www.figma.com/design/A3MpJetB3FclTMVY4nXLM2/Madhuban-360?node-id=36-1261) — **fileKey** `A3MpJetB3FclTMVY4nXLM2`; convert URL `node-id=36-1261` to `36:1261` for MCP `nodeId`.
+- **Screenshots:** The `screens/` folder is for **flow and layout** reference; Figma is the source of truth for exact specs.
+- **Assets:** Use `download_figma_images` when you need exported SVG/PNG; save under something like `apps/mobile/assets/figma` or `apps/web-admin/public`.
+- **Tasks:** If the spec is ambiguous, state what you looked up (Figma node or theme key) in the PR or commit message when helpful.

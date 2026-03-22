@@ -1,0 +1,23 @@
+/* Import in web-admin: @import "@madhuban/theme/tokens.css" when bundler resolves package exports */
+
+:root {
+  --color-primary: #155dfc;
+  --color-primary-muted: #1a2536;
+  --color-accent: #155dfc;
+  --color-surface: #f8fafc;
+  --color-surface-elevated: #ffffff;
+  --color-text: #1a2536;
+  --color-text-muted: #62748e;
+  --color-border: #e2e8f0;
+  --color-success: #059669;
+  --color-warning: #ea580c;
+  --color-danger: #e7000b;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+}
