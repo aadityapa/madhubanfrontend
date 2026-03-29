@@ -40,7 +40,11 @@
       ]
     ],
     "extra": {
-      "router": {}
-    }
+      "router": {},
+      "eas": {
+        "projectId": "14e8c001-0548-44cb-a6c1-969ba0c3510d"
+      }
+    },
+    "owner": "developer8989"
   }
 }

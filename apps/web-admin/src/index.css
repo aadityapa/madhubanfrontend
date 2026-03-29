@@ -1,5 +1,78 @@
 @import "@madhuban/theme/tokens.css";
 
+/* ─── CSS custom properties (light mode defaults) ─────────────────────────── */
+:root,
+[data-theme="light"] {
+  --c-body-bg: #f8fafc;
+  --c-card: #ffffff;
+  --c-card-border: #e9eef5;
+  --c-text: #0f172a;
+  --c-text-2: #334155;
+  --c-text-muted: #64748b;
+  --c-text-faint: #94a3b8;
+  --c-input-bg: #f8fafc;
+  --c-input-border: #e2e8f0;
+  --c-table-head: #f8fafc;
+  --c-row-border: #f1f5f9;
+  --c-divider: #f1f5f9;
+  --c-hover: #f8fafc;
+
+  --c-sidebar-bg: #ffffff;
+  --c-sidebar-border: #e9eef5;
+  --c-sidebar-text: #475569;
+  --c-sidebar-text-active: #1e40af;
+  --c-sidebar-active-bg: #eff6ff;
+  --c-sidebar-hover-bg: #f8fafc;
+  --c-sidebar-section: #94a3b8;
+  --c-sidebar-profile-border: #f1f5f9;
+  --c-sidebar-logout: #94a3b8;
+
+  --c-topbar-bg: #ffffff;
+  --c-topbar-border: #e9eef5;
+  --c-topbar-icon: #64748b;
+  --c-topbar-search-bg: #f1f5f9;
+  --c-topbar-search-border: #e2e8f0;
+}
+
+[data-theme="dark"] {
+  --c-body-bg: #0d1117;
+  --c-card: #161b22;
+  --c-card-border: #30363d;
+  --c-text: #e6edf3;
+  --c-text-2: #c9d1d9;
+  --c-text-muted: #8b949e;
+  --c-text-faint: #6e7681;
+  --c-input-bg: #0d1117;
+  --c-input-border: #30363d;
+  --c-table-head: #161b22;
+  --c-row-border: #21262d;
+  --c-divider: #21262d;
+  --c-hover: #1c2128;
+
+  --c-sidebar-bg: #0f1624;
+  --c-sidebar-border: rgba(255, 255, 255, 0.06);
+  --c-sidebar-text: #94a3b8;
+  --c-sidebar-text-active: #ffffff;
+  --c-sidebar-active-bg: rgba(37, 99, 235, 0.18);
+  --c-sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --c-sidebar-section: rgba(148, 163, 184, 0.45);
+  --c-sidebar-profile-border: rgba(255, 255, 255, 0.06);
+  --c-sidebar-logout: #475569;
+
+  --c-topbar-bg: #161b22;
+  --c-topbar-border: #30363d;
+  --c-topbar-icon: #8b949e;
+  --c-topbar-search-bg: #0d1117;
+  --c-topbar-search-border: #30363d;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #root {
@@ -8,7 +81,17 @@ body,
 
 body {
   margin: 0;
-  font-family: system-ui, Segoe UI, Roboto, sans-serif;
-  background: var(--color-surface);
-  color: var(--color-text);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--c-body-bg);
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s, color 0.2s;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
