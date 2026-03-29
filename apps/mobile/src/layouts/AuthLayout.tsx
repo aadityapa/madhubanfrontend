@@ -29,13 +29,16 @@ export function AuthLayout({
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.safe}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 18 : 0}
       >
         <View style={styles.blurBlue} />
         <View style={styles.blurRed} />
         <DismissKeyboardView style={styles.safe}>
           <ScrollView
             contentContainerStyle={styles.scroll}
+            contentInsetAdjustmentBehavior="always"
+            keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -89,7 +92,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 8,
-    paddingBottom: 16,
+    paddingBottom: 96,
   },
   brandWrap: {
     alignItems: "center",

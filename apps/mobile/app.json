@@ -7,16 +7,12 @@
     "scheme": "madhuban360",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/Onboarding.svg",
-      "resizeMode": "cover",
-      "backgroundColor": "#152B59"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.madhuban360.app"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +28,19 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
-    ]
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#152B59",
+          "image": "./assets/icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {}
+    }
   }
 }

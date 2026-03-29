@@ -1,3 +1,5 @@
+import { Feather } from "@expo/vector-icons";
+import { colors, font } from "@madhuban/theme";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
@@ -8,7 +10,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { colors, font } from "@madhuban/theme";
 import MadhubanLogo from "../../assets/madhubanlogo2.svg";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -63,12 +64,12 @@ export default function SplashScreen() {
     glowLoop.start();
     floatLoop.start();
 
-    const t = setTimeout(() => {
+    const timeout = setTimeout(() => {
       router.replace("/(auth)/login");
     }, 2200);
 
     return () => {
-      clearTimeout(t);
+      clearTimeout(timeout);
       glowLoop.stop();
       floatLoop.stop();
     };
@@ -105,7 +106,7 @@ export default function SplashScreen() {
       <View style={styles.metaWrap}>
         <View style={styles.dividerRow}>
           <View style={styles.divider} />
-          <Text style={styles.metaIcon}>⌂</Text>
+          <Feather name="home" size={12} color="#87A3EB" />
           <View style={styles.divider} />
         </View>
         <Text style={styles.facilities}>FACILITIES</Text>
@@ -213,11 +214,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 1,
     backgroundColor: "rgba(135, 163, 235, 0.55)",
-  },
-  metaIcon: {
-    color: "#87A3EB",
-    fontSize: 12,
-    lineHeight: 12,
   },
   facilities: {
     color: "#FFFFFF",

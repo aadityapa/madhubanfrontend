@@ -1,64 +1,312 @@
-import { colors, font, radii } from "@madhuban/theme";
+import { font, radii } from "@madhuban/theme";
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
   heroCard: {
-    gap: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
-  heroCardLabel: {
-    color: "rgba(225,233,245,0.72)",
-    fontFamily: font.family.bold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+  heroAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  heroCardValue: {
+  heroAvatarText: {
     color: "#FFFFFF",
     fontFamily: font.family.black,
     fontSize: 24,
-    lineHeight: 28,
+  },
+  heroBody: {
+    flex: 1,
+    gap: 3,
+  },
+  heroName: {
+    color: "#FFFFFF",
+    fontFamily: font.family.black,
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  heroMeta: {
+    color: "rgba(225,233,245,0.64)",
+    fontFamily: font.family.medium,
+    fontSize: 11,
+  },
+  heroBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  liveDotWrap: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: "#2BE2A8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#2BE2A8",
+  },
+  roleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: radii.full,
+    backgroundColor: "#1A4786",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  roleBadgeText: {
+    color: "#B8D9FF",
+    fontFamily: font.family.bold,
+    fontSize: 10,
+    letterSpacing: 0.8,
   },
   scroll: {
     flex: 1,
   },
   content: {
-    gap: 16,
-    paddingBottom: 22,
+    gap: 14,
+    paddingBottom: 26,
   },
-  profileCard: {
+  infoCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E7ECF4",
-    padding: 20,
+    overflow: "hidden",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  infoLabelWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  infoIconWrap: {
+    width: 22,
+    alignItems: "center",
+  },
+  infoLabel: {
+    color: "#23324B",
+    fontFamily: font.family.bold,
+    fontSize: 15,
+  },
+  infoValue: {
+    color: "#1E2B43",
+    fontFamily: font.family.black,
+    fontSize: 15,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#EDF1F7",
+    marginLeft: 46,
+  },
+  valuePill: {
+    borderRadius: radii.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  valuePillSuccess: {
+    backgroundColor: "#E8FBF3",
+  },
+  valuePillText: {
+    fontFamily: font.family.bold,
+    fontSize: 12,
+  },
+  valuePillSuccessText: {
+    color: "#17C484",
+  },
+  sectionCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E7ECF4",
+    padding: 16,
+    gap: 14,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sectionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#FFF5DA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTitle: {
+    color: "#6F8098",
+    fontFamily: font.family.bold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  functionList: {
+    gap: 18,
+  },
+  functionGroup: {
+    gap: 10,
+  },
+  functionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  functionIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  functionHeaderBody: {
+    flex: 1,
+  },
+  functionTitle: {
+    color: "#1F2D46",
+    fontFamily: font.family.black,
+    fontSize: 16,
+  },
+  functionSubtitle: {
+    color: "#9AA8BC",
+    fontFamily: font.family.medium,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  statusPill: {
+    borderRadius: radii.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusPillText: {
+    fontFamily: font.family.bold,
+    fontSize: 12,
+  },
+  statusSuccess: {
+    backgroundColor: "#E8FBF3",
+  },
+  statusSuccessText: {
+    color: "#17C484",
+  },
+  statusWarning: {
+    backgroundColor: "#FFF0E5",
+  },
+  statusWarningText: {
+    color: "#FF6B00",
+  },
+  functionTaskList: {
+    gap: 10,
+    paddingLeft: 5,
+  },
+  functionTaskRow: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  avatar: {
-    width: 76,
-    height: 76,
-    borderRadius: radii.full,
-    backgroundColor: colors.primary,
-    color: "#FFFFFF",
-    textAlign: "center",
-    lineHeight: 76,
-    fontFamily: font.family.black,
-    fontSize: 24,
-    overflow: "hidden",
+  functionTaskDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
-  name: {
-    marginTop: 8,
-    color: colors.text,
-    fontFamily: font.family.black,
-    fontSize: 22,
-  },
-  meta: {
-    color: colors.textMuted,
-    fontFamily: font.family.medium,
-    fontSize: 13,
+  functionTaskText: {
+    flex: 1,
+    color: "#2A3650",
+    fontFamily: font.family.bold,
+    fontSize: 14,
     lineHeight: 18,
   },
-  section: {
-    gap: 12,
+  taskTonePill: {
+    borderRadius: radii.full,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  taskToneText: {
+    fontFamily: font.family.bold,
+    fontSize: 11,
+  },
+  statsRow: {
+    flexDirection: "row",
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: "#EDF1F7",
+    paddingTop: 14,
+  },
+  statCell: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  statValue: {
+    color: "#2962FF",
+    fontFamily: font.family.black,
+    fontSize: 32,
+    lineHeight: 34,
+  },
+  statLabel: {
+    color: "#7F8EA6",
+    fontFamily: font.family.bold,
+    fontSize: 11,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+  },
+  skillsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  skillChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: "#F8FBFF",
+    borderWidth: 1,
+    borderColor: "#DCE7F4",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  skillChipText: {
+    color: "#2962FF",
+    fontFamily: font.family.bold,
+    fontSize: 13,
+  },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 18,
+    backgroundColor: "#FFF1F1",
+    borderWidth: 1,
+    borderColor: "#FFD7D7",
+    paddingVertical: 16,
+    marginTop: 2,
+  },
+  logoutButtonText: {
+    color: "#FF3131",
+    fontFamily: font.family.black,
+    fontSize: 17,
   },
 });

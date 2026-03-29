@@ -21,7 +21,7 @@ export function getTabsForRole(
     return [
       { name: "home", title: "Home" },
       { name: "tasks", title: "Tasks" },
-      { name: "qr", title: "Scan" },
+      { name: "reports", title: "Reports" },
       { name: "profile", title: "Profile" },
     ];
   }
@@ -34,7 +34,6 @@ export function getTabsForRole(
   ];
 }
 
-export function showQrTab(role: UserRole | string | undefined): boolean {
-  const normalized = normalizeRole(role);
-  return normalized === "staff" || normalized === "guard" || normalized === "admin";
+export function showQrTab(_role: UserRole | string | undefined): boolean {
+  return false;
 }

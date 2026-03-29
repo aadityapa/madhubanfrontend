@@ -9,7 +9,10 @@
     "ios": "node ./scripts/expo-start.js --ios",
     "web": "node ./scripts/expo-start.js --web",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "eas:apk": "eas build --platform android --profile preview",
+    "eas:apk:local": "eas build --platform android --profile preview --local",
+    "eas:dev": "eas build --platform android --profile development"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",
@@ -24,6 +27,7 @@
     "expo-font": "~14.0.11",
     "expo-linking": "~8.0.11",
     "expo-router": "~6.0.23",
+    "expo-splash-screen": "^31.0.13",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-dom": "19.1.0",
