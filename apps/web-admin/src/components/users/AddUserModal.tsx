@@ -41,6 +41,7 @@ export function AddUserModal({
     const initials = form.fullName.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
     onSave({
       id: Date.now(),
+      apiId: "",
       name: form.fullName,
       email: form.email,
       phone: form.phone,

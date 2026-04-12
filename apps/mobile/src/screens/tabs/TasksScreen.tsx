@@ -1,5 +1,5 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { getMyTasks } from "@madhuban/api";
+import { getMyTasks, startMyTask, submitMyTaskCompletion, updateMyTaskStatus } from "@madhuban/api";
 import { colors, font, radii } from "@madhuban/theme";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -662,16 +662,45 @@ export function TasksScreen() {
   const { role } = useAuth();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
-  const [tasks] = useState<TaskItem[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<TaskItem[]>(MOCK_TASKS);
   const [ongoingTaskIds, setOngoingTaskIds] = useState<Set<string>>(new Set());
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [modalInitialView, setModalInitialView] = useState<ModalView>("detail");
 
+  function toTaskItem(raw: any): TaskItem {
+    const status = String(raw?.status ?? "").toUpperCase().replace(/\\s/g, "_");
+    const priorityRaw = String(raw?.priority ?? "MEDIUM").toUpperCase();
+    const priority: TaskPriority =
+      status === "COMPLETED"
+        ? "COMPLETED"
+        : (["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(priorityRaw)
+            ? (priorityRaw as TaskPriority)
+            : "MEDIUM");
+    return {
+      id: String(raw?._id ?? raw?.id ?? ""),
+      title: String(raw?.title ?? raw?.taskName ?? "Untitled Task"),
+      location: String(raw?.locationFloor ?? raw?.roomNumber ?? raw?.propertyName ?? raw?.location ?? "—"),
+      zone: String(raw?.category ?? raw?.departmentName ?? raw?.department ?? "—"),
+      timeStart: String(raw?.startTime ?? ""),
+      timeEnd: raw?.endTime ? String(raw.endTime) : undefined,
+      estMinutes: raw?.timeDuration != null ? Number(raw.timeDuration) : undefined,
+      priority,
+      frequency: raw?.frequency ? String(raw.frequency) : undefined,
+      materials: Array.isArray(raw?.materials) ? raw.materials : undefined,
+      equipment: Array.isArray(raw?.equipment) ? raw.equipment : undefined,
+      checkerName: raw?.checker ? String(raw.checker) : undefined,
+      approver: raw?.approver ? String(raw.approver) : undefined,
+    } as TaskItem;
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      await getMyTasks();
+      const res = await getMyTasks();
+      if (Array.isArray(res) && res.length) {
+        setTasks(res.map(toTaskItem));
+      }
     } catch {
       // fall through to mock data
     } finally {
@@ -689,10 +718,18 @@ export function TasksScreen() {
   }
 
   function handleTaskStart(taskId: string) {
+    void startMyTask(taskId).catch(() => {
+      void updateMyTaskStatus(taskId, "IN_PROGRESS").catch(() => {});
+    });
     setOngoingTaskIds((prev) => new Set([...prev, taskId]));
   }
 
   function handleTaskComplete(taskId: string) {
+    void submitMyTaskCompletion(taskId, { notes: "Completed from mobile task board." }).catch(
+      () => {
+        void updateMyTaskStatus(taskId, "COMPLETED").catch(() => {});
+      },
+    );
     setOngoingTaskIds((prev) => {
       const next = new Set(prev);
       next.delete(taskId);

@@ -1,7 +1,12 @@
-import { getDashboardMetrics } from "@madhuban/api";
+import {
+  getActivity,
+  getAlerts,
+  getDashboardMetrics,
+  getRevenue,
+  getSalesPipeline,
+} from "@madhuban/api";
 import {
   AlertTriangle,
-  CheckCircle2,
   ClipboardList,
   Plus,
   TrendingUp,
@@ -23,6 +28,25 @@ interface Metrics {
   openTasks?: number;
   dueToday?: number;
   attendancePercent?: number;
+}
+
+interface DashboardAlert {
+  id: string | number;
+  title: string;
+  reporter?: string;
+  time?: string;
+  level?: "URGENT" | "MEDIUM";
+  reportedBy?: string;
+  timeAgo?: string;
+  urgency: "URGENT" | "MEDIUM";
+}
+
+interface DashboardActivityItem {
+  id: string | number;
+  text: string;
+  source?: string;
+  timeAgo?: string;
+  dot?: string;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -169,13 +193,140 @@ function DashboardActions() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export function AdminDashboardPage() {
   const [metrics, setMetrics] = useState<Metrics>(MOCK_METRICS);
+  const [pipelineData, setPipelineData] = useState<number[]>(PIPELINE_DATA);
+  const [pipelineSummary, setPipelineSummary] = useState({
+    value: 42000,
+    trend: 12.5,
+    label: "from last month",
+  });
+  const [revenueData, setRevenueData] = useState<number[]>(REVENUE_DATA);
+  const [revenueSummary, setRevenueSummary] = useState({
+    value: 128500,
+    trend: 8.2,
+    label: "Year-to-date",
+  });
+  const [alerts, setAlerts] = useState<DashboardAlert[]>(
+    ALERTS.map((alert) => ({
+      id: alert.id,
+      title: alert.title,
+      reporter: alert.reporter,
+      time: alert.time,
+      level: alert.level,
+      reportedBy: alert.reporter,
+      timeAgo: alert.time,
+      urgency: alert.level,
+    })),
+  );
+  const [activity, setActivity] = useState<DashboardActivityItem[]>(
+    ACTIVITY.map((item) => {
+      const [source, timeAgo] = item.meta.split(" · ");
+      return {
+        id: item.id,
+        text: item.text,
+        source,
+        timeAgo,
+        dot: item.dot,
+      };
+    }),
+  );
 
   useShellHeader({ showSearch: true });
 
   useEffect(() => {
-    getDashboardMetrics()
-      .then((m) => setMetrics({ ...MOCK_METRICS, ...m }))
-      .catch(() => setMetrics(MOCK_METRICS));
+    void Promise.allSettled([
+      getDashboardMetrics(),
+      getSalesPipeline(),
+      getRevenue(),
+      getAlerts(),
+      getActivity(),
+    ]).then(([metricsRes, pipelineRes, revenueRes, alertsRes, activityRes]) => {
+      if (metricsRes.status === "fulfilled") {
+        const next = metricsRes.value as Record<string, unknown>;
+        setMetrics({
+          ...MOCK_METRICS,
+          ...next,
+          adminCount: Number(next.adminCount ?? next.admins ?? MOCK_METRICS.adminCount) || 0,
+          staffCount: Number(next.staffCount ?? next.staff ?? MOCK_METRICS.staffCount) || 0,
+        });
+      } else {
+        setMetrics(MOCK_METRICS);
+      }
+
+      if (pipelineRes.status === "fulfilled") {
+        const next = pipelineRes.value as {
+          data?: Array<{ value?: number }>;
+          summary?: { value?: number; trend?: number; label?: string };
+        };
+        const series = Array.isArray(next.data)
+          ? next.data.map((item) => Number(item.value ?? 0))
+          : [];
+        if (series.length) setPipelineData(series);
+        if (next.summary) {
+          setPipelineSummary({
+            value: Number(next.summary.value ?? 0),
+            trend: Number(next.summary.trend ?? 0),
+            label: String(next.summary.label ?? ""),
+          });
+        }
+      }
+
+      if (revenueRes.status === "fulfilled") {
+        const next = revenueRes.value as {
+          data?: Array<{ revenue?: number }>;
+          summary?: { value?: number; trend?: number; label?: string };
+        };
+        const series = Array.isArray(next.data)
+          ? next.data.map((item) => Number(item.revenue ?? 0))
+          : [];
+        if (series.length) setRevenueData(series);
+        if (next.summary) {
+          setRevenueSummary({
+            value: Number(next.summary.value ?? 0),
+            trend: Number(next.summary.trend ?? 0),
+            label: String(next.summary.label ?? ""),
+          });
+        }
+      }
+
+      if (alertsRes.status === "fulfilled" && Array.isArray(alertsRes.value)) {
+        setAlerts(
+          alertsRes.value.map((alert) => {
+            const item = alert as Record<string, unknown>;
+            return {
+              id: String(item.id ?? ""),
+              title: String(item.title ?? "Alert"),
+              reporter: String(item.reportedBy ?? ""),
+              time: String(item.timeAgo ?? ""),
+              level:
+                String(item.urgency ?? "MEDIUM").toUpperCase() === "URGENT"
+                  ? "URGENT"
+                  : "MEDIUM",
+              reportedBy: String(item.reportedBy ?? ""),
+              timeAgo: String(item.timeAgo ?? ""),
+              urgency:
+                String(item.urgency ?? "MEDIUM").toUpperCase() === "URGENT"
+                  ? "URGENT"
+                  : "MEDIUM",
+            };
+          }),
+        );
+      }
+
+      if (activityRes.status === "fulfilled" && Array.isArray(activityRes.value)) {
+        setActivity(
+          activityRes.value.map((entry, index) => {
+            const item = entry as Record<string, unknown>;
+            return {
+              id: String(item.id ?? index),
+              text: String(item.text ?? ""),
+              source: String(item.source ?? ""),
+              timeAgo: String(item.timeAgo ?? ""),
+              dot: index % 2 === 0 ? "#64748b" : "#94a3b8",
+            };
+          }),
+        );
+      }
+    });
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", {
@@ -246,7 +397,7 @@ export function AdminDashboardPage() {
             <span style={cs.cardMeta}>Last 6 Months</span>
           </div>
           <div style={{ margin: "4px 0 12px" }}>
-            <AreaChart data={PIPELINE_DATA} gradientId="pipeline-grad" />
+            <AreaChart data={pipelineData} gradientId="pipeline-grad" />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
             {["Leads", "Proposals", "Negot.", "Closed"].map((l) => (
@@ -254,8 +405,13 @@ export function AdminDashboardPage() {
             ))}
           </div>
           <div style={{ marginTop: 16, borderTop: "1px solid var(--c-divider)", paddingTop: 14, display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: "var(--c-text)" }}>$42,000</span>
-            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>+12.5% from last month</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: "var(--c-text)" }}>
+              ${pipelineSummary.value.toLocaleString()}
+            </span>
+            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>
+              {pipelineSummary.trend >= 0 ? "+" : ""}
+              {pipelineSummary.trend}% {pipelineSummary.label}
+            </span>
           </div>
         </div>
 
@@ -268,7 +424,7 @@ export function AdminDashboardPage() {
             </div>
           </div>
           <div style={{ margin: "4px 0 12px" }}>
-            <AreaChart data={REVENUE_DATA} gradientId="revenue-grad" />
+            <AreaChart data={revenueData} gradientId="revenue-grad" />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
             {["JAN", "FEB", "MAR", "APR", "MAY", "JUN"].map((m) => (
@@ -276,8 +432,13 @@ export function AdminDashboardPage() {
             ))}
           </div>
           <div style={{ marginTop: 16, borderTop: "1px solid var(--c-divider)", paddingTop: 14, display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: "var(--c-text)" }}>$128,500</span>
-            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>+8.2% Year-to-date</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: "var(--c-text)" }}>
+              ${revenueSummary.value.toLocaleString()}
+            </span>
+            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>
+              {revenueSummary.trend >= 0 ? "+" : ""}
+              {revenueSummary.trend}% {revenueSummary.label}
+            </span>
           </div>
         </div>
       </div>
@@ -290,16 +451,16 @@ export function AdminDashboardPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={cs.cardTitle}>Facility Issue Alerts</span>
               <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}>
-                {ALERTS.filter((a) => a.level === "URGENT").length} URGENT
+                {alerts.filter((a) => a.urgency === "URGENT").length} URGENT
               </span>
             </div>
             <button style={cs.linkBtn}>View All Tickets</button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
-            {ALERTS.map((alert) => (
+            {alerts.map((alert) => (
               <div key={alert.id} style={cs.alertRow}>
-                <div style={{ ...cs.alertDot, background: alert.level === "URGENT" ? "#fef2f2" : "#fefce8", border: `1px solid ${alert.level === "URGENT" ? "#fecaca" : "#fef08a"}` }}>
-                  <AlertTriangle size={14} color={alert.level === "URGENT" ? "#dc2626" : "#ca8a04"} />
+                <div style={{ ...cs.alertDot, background: alert.urgency === "URGENT" ? "#fef2f2" : "#fefce8", border: `1px solid ${alert.urgency === "URGENT" ? "#fecaca" : "#fef08a"}` }}>
+                  <AlertTriangle size={14} color={alert.urgency === "URGENT" ? "#dc2626" : "#ca8a04"} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--c-text)" }}>{alert.title}</div>
@@ -307,7 +468,7 @@ export function AdminDashboardPage() {
                     Reported by: {alert.reporter} · {alert.time}
                   </div>
                 </div>
-                <AlertBadge level={alert.level} />
+                <AlertBadge level={alert.urgency} />
               </div>
             ))}
           </div>
@@ -319,12 +480,14 @@ export function AdminDashboardPage() {
             <span style={cs.cardTitle}>Recent Activity</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 8 }}>
-            {ACTIVITY.map((item) => (
+            {activity.map((item) => (
               <div key={item.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: item.dot, marginTop: 5, flexShrink: 0 }} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "var(--c-text)", lineHeight: 1.4 }}>{item.text}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--c-text-faint)", marginTop: 3 }}>{item.meta}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--c-text-faint)", marginTop: 3 }}>
+                    {item.source} Â· {item.timeAgo}
+                  </div>
                 </div>
               </div>
             ))}

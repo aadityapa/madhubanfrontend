@@ -2,10 +2,9 @@ import {
   AlertTriangle,
   Check,
   Clock,
-  X,
 } from "lucide-react";
 import { useState } from "react";
-import { ROLES, STATUSES, roleBadgeStyle, statusDotColor, type User } from "./types";
+import { ROLES, roleBadgeStyle, statusDotColor, type User } from "./types";
 
 const FACILITIES = [
   { id: "nwp", label: "North Wing Plaza", sub: "Building A, 4205 Industrial Way", primary: true },

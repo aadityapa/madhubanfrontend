@@ -3,6 +3,7 @@ export type UserStatus = "Active" | "Suspended" | "Inactive";
 
 export interface User {
   id: number;
+  apiId: string;
   name: string;
   email: string;
   phone?: string;

@@ -2,6 +2,7 @@ import containerLogo from "../assets/Container.svg";
 import { Eye, EyeOff, Lock, LogIn, Mail, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { login } from "@madhuban/api";
 import { useTheme } from "../context/ThemeContext";
 import "./login.css";
 
@@ -42,7 +43,7 @@ export function LoginPage() {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
@@ -51,12 +52,19 @@ export function LoginPage() {
       return;
     }
 
-    setLoading(true);
-    // Simulate async auth – replace with real API call
-    setTimeout(() => {
+    try {
+      setLoading(true);
+      const res = await login({ email: email.trim(), password });
+      localStorage.setItem("token", res.data.token);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
+      if (remember) localStorage.setItem("rememberMe", "1");
+      else localStorage.removeItem("rememberMe");
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+    } finally {
       setLoading(false);
-      navigate("/", { replace: true });
-    }, 900);
+    }
   }
 
   return (

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ToastContainer } from "./components/Toast";
 import { ShellHeaderProvider } from "./context/ShellHeaderContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -11,6 +11,12 @@ import { PropertyManagementPage } from "./pages/PropertyManagementPage";
 import { TaskManagerPage } from "./pages/TaskManagerPage";
 import { UserManagementPage } from "./pages/UserManagementPage";
 
+function RequireAuth() {
+  const token = localStorage.getItem("token");
+  if (!token) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -21,20 +27,22 @@ export default function App() {
             <Route path="login" element={<LoginPage />} />
 
             {/* Protected shell */}
-            <Route element={<AdminShellLayout />}>
-              <Route path="dashboard" element={<AdminDashboardPage />} />
-              <Route path="users" element={<UserManagementPage />} />
-              <Route path="properties" element={<PropertyManagementPage />} />
-              <Route path="tasks" element={<TaskManagerPage />} />
+            <Route element={<RequireAuth />}>
+              <Route element={<AdminShellLayout />}>
+                <Route path="dashboard" element={<AdminDashboardPage />} />
+                <Route path="users" element={<UserManagementPage />} />
+                <Route path="properties" element={<PropertyManagementPage />} />
+                <Route path="tasks" element={<TaskManagerPage />} />
 
-              {/* System modules – coming soon */}
-              <Route path="hrms"       element={<ComingSoonPage />} />
-              <Route path="sales"      element={<ComingSoonPage />} />
-              <Route path="facilities" element={<ComingSoonPage />} />
-              <Route path="legal"      element={<ComingSoonPage />} />
-              <Route path="accounts"   element={<ComingSoonPage />} />
-              <Route path="store"      element={<ComingSoonPage />} />
-              <Route path="reports"    element={<ComingSoonPage />} />
+                {/* System modules – coming soon */}
+                <Route path="hrms" element={<ComingSoonPage />} />
+                <Route path="sales" element={<ComingSoonPage />} />
+                <Route path="facilities" element={<ComingSoonPage />} />
+                <Route path="legal" element={<ComingSoonPage />} />
+                <Route path="accounts" element={<ComingSoonPage />} />
+                <Route path="store" element={<ComingSoonPage />} />
+                <Route path="reports" element={<ComingSoonPage />} />
+              </Route>
             </Route>
 
             {/* Redirect root → dashboard, everything else → login */}

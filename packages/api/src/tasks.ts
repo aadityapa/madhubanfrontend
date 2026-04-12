@@ -4,6 +4,23 @@ import { getAuthHeaders, readJsonOrThrow } from "./client";
 
 const API_BASE = () => `${getApiBaseUrl()}/api/tasks`;
 
+/** `PATCH /api/tasks/:id/status` expects lowercase + aliases (see FRONTEND_API_INTEGRATION.md). */
+function mapAdminTaskStatusForApi(status: string): string {
+  const key = status.toUpperCase().replace(/\s+/g, "_");
+  const map: Record<string, string> = {
+    TO_DO: "pending",
+    IN_PROGRESS: "in_progress",
+    REVIEW: "pending_approval",
+    PENDING_APPROVAL: "pending_approval",
+    COMPLETED: "completed",
+    CANCELLED: "cancelled",
+    OVERDUE: "overdue",
+    PENDING: "pending",
+  };
+  if (map[key]) return map[key];
+  return status.toLowerCase().replace(/\s+/g, "_");
+}
+
 function formatDueDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
@@ -172,7 +189,7 @@ export async function updateTask(id: string, data: Record<string, unknown>): Pro
     endTime: data.endTime,
     timeDuration: data.timeDuration,
     frequency: data.frequency,
-    status: data.status?.toString().toLowerCase() || "pending",
+    status: mapAdminTaskStatusForApi(String(data.status ?? "pending")),
     roomNumber: data.roomNumber,
     locationFloor: data.locationFloor,
     instructions: Array.isArray(data.instructions) ? data.instructions : [],
@@ -192,7 +209,7 @@ export async function updateTaskStatus(id: string, status: string): Promise<unkn
   const res = await fetch(`${API_BASE()}/${id}/status`, {
     method: "PATCH",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ status: status.toLowerCase() }),
+    body: JSON.stringify({ status: mapAdminTaskStatusForApi(status) }),
   });
   return readJsonOrThrow(res);
 }
@@ -207,7 +224,7 @@ export async function deleteTask(id: string): Promise<unknown> {
 
 export async function approveTask(taskId: string): Promise<unknown> {
   const res = await fetch(`${API_BASE()}/${taskId}/approve`, {
-    method: "POST",
+    method: "PATCH",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ approved: true }),
   });
@@ -215,10 +232,10 @@ export async function approveTask(taskId: string): Promise<unknown> {
 }
 
 export async function rejectTask(taskId: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}/${taskId}/reject`, {
-    method: "POST",
+  const res = await fetch(`${API_BASE()}/${taskId}/approve`, {
+    method: "PATCH",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ rejected: true }),
+    body: JSON.stringify({ approved: false }),
   });
   return readJsonOrThrow(res);
 }

@@ -3,14 +3,13 @@ import {
   BookOpen,
   Building2,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Download,
   FileText,
   Filter,
   LayoutGrid,
   Map,
   MapPin,
+  MoreVertical,
   Plus,
   Search,
   Settings,
@@ -23,9 +22,18 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShellHeader } from "../context/ShellHeaderContext";
 import { useToast } from "../context/ToastContext";
+import {
+  createProperty,
+  getAssetSummary,
+  getAssets,
+  getProperties,
+  getPropertySummary,
+  getReports,
+  getTasks,
+} from "@madhuban/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PropertyType = "Commercial" | "Residential" | "Industrial";
@@ -51,6 +59,9 @@ interface Asset {
   id: number; name: string; icon: string; location: string;
   condition: AssetCondition; lastMaint: string; nextService: string; overdue?: boolean;
 }
+
+type PropertySummary = { total: number; activeAmc: number; expiringAmc: number; occupancyPercent: number };
+type AssetSummary = { total: number; needsAttention: number; upcomingService: number; uptimeRate: number };
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const PROPERTIES: Property[] = [
@@ -173,14 +184,34 @@ function woAction(s: WOStatus) {
 interface AddPropForm { name: string; propId: string; type: PropertyType | ""; address: string; city: string; state: string; zip: string; units: string; unitsSold: string; unitsUnsold: string; contact: string; }
 const EMPTY_PROP: AddPropForm = { name:"", propId:"", type:"", address:"", city:"", state:"", zip:"", units:"", unitsSold:"", unitsUnsold:"", contact:"" };
 
-function AddPropertyModal({ onClose }: { onClose: () => void }) {
+function AddPropertyModal({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const [form, setForm] = useState<AddPropForm>(EMPTY_PROP);
   const { showToast } = useToast();
   function set(k: keyof AddPropForm, v: string) { setForm(f => ({ ...f, [k]: v })); }
-  function handleAdd() {
+  async function handleAdd() {
     if (!form.name) return;
-    showToast("success", "Property Added!", `"${form.name}" has been registered successfully.`);
-    onClose();
+    try {
+      await createProperty({
+        propertyName: form.name,
+        propertyType: form.type || undefined,
+        location: [form.city, form.state].filter(Boolean).join(", "),
+        address: form.address,
+        city: form.city,
+        stateProvince: form.state,
+        zip: form.zip,
+      });
+      showToast("success", "Property Added!", `"${form.name}" has been registered successfully.`);
+      onClose();
+      onAdded();
+    } catch (e) {
+      showToast("error", "Failed to add property", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
   return (
@@ -257,14 +288,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ─── Property list tab ────────────────────────────────────────────────────────
 function PropertyCard({ p }: { p: Property }) {
-  const typeColor: Record<PropertyType, string> = { Commercial:"#2563eb", Residential:"#16a34a", Industrial:"#ea580c" };
   return (
     <div style={pl.card}>
       {/* Image area */}
       <div style={{ height:120, background:`linear-gradient(135deg, ${p.gradFrom}, ${p.gradTo})`, borderRadius:"10px 10px 0 0", position:"relative" as const, display:"flex", alignItems:"flex-end", padding:10 }}>
         <Badge label={p.type.toUpperCase()} bg="rgba(0,0,0,0.45)" color="#fff" />
         <button style={{ position:"absolute", top:8, right:8, background:"rgba(255,255,255,0.2)", border:"none", borderRadius:6, width:26, height:26, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff" }}>
-          ⊹
+          <MoreVertical size={14} />
         </button>
       </div>
       <div style={{ padding:"12px 14px 14px" }}>
@@ -295,15 +325,23 @@ function PropertyCard({ p }: { p: Property }) {
   );
 }
 
-function PropertyListTab({ onAddProperty }: { onAddProperty: () => void }) {
+function PropertyListTab({
+  properties,
+  summary,
+  onAddProperty,
+}: {
+  properties: Property[];
+  summary: PropertySummary | null;
+  onAddProperty: () => void;
+}) {
   return (
     <div>
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:20 }}>
-        <StatMini label="TOTAL PROPERTIES" value={42} trend="+3 from last month" trendUp />
-        <StatMini label="ACTIVE AMC" value={38} trend="60.5% COVERED" trendUp />
-        <StatMini label="EXPIRING AMC" value="04" trend="Renewals due in 30 days" trendUp={false} />
-        <StatMini label="OCCUPANCY" value="92%" />
+        <StatMini label="TOTAL PROPERTIES" value={summary?.total ?? "—"} trend="+3 from last month" trendUp />
+        <StatMini label="ACTIVE AMC" value={summary?.activeAmc ?? "—"} trend="60.5% COVERED" trendUp />
+        <StatMini label="EXPIRING AMC" value={summary?.expiringAmc ?? "—"} trend="Renewals due in 30 days" trendUp={false} />
+        <StatMini label="OCCUPANCY" value={summary?.occupancyPercent != null ? `${summary.occupancyPercent}%` : "—"} />
       </div>
 
       {/* Filters */}
@@ -319,7 +357,7 @@ function PropertyListTab({ onAddProperty }: { onAddProperty: () => void }) {
 
       {/* Grid */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:20 }}>
-        {PROPERTIES.map(p => <PropertyCard key={p.id} p={p}/>)}
+        {properties.map(p => <PropertyCard key={p.id} p={p}/>)}
         {/* Add placeholder */}
         <div
           style={{ border:"2px dashed var(--c-input-border)", borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:32, gap:10, cursor:"pointer", background:"var(--c-card)" }}
@@ -335,7 +373,7 @@ function PropertyListTab({ onAddProperty }: { onAddProperty: () => void }) {
 
       {/* Pagination */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <span style={{ fontSize:13, color:"var(--c-text-muted)" }}>Showing 1 to 5 of 42 properties</span>
+        <span style={{ fontSize:13, color:"var(--c-text-muted)" }}>Showing 1 to {Math.min(5, properties.length)} of {properties.length} properties</span>
         <div style={{ display:"flex", gap:4 }}>
           {["←","1","2","3","...","9","→"].map(l=>(
             <button key={l} style={{ ...pl.pageBtn, ...(l==="1"?{background:"#0f172a",color:"#fff",borderColor:"#0f172a"}:{}) }}>{l}</button>
@@ -347,7 +385,7 @@ function PropertyListTab({ onAddProperty }: { onAddProperty: () => void }) {
 }
 
 // ─── Work Orders tab ──────────────────────────────────────────────────────────
-function WorkOrdersTab() {
+function WorkOrdersTab({ workOrders }: { workOrders: WorkOrder[] }) {
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
@@ -378,7 +416,7 @@ function WorkOrdersTab() {
             </tr>
           </thead>
           <tbody>
-            {WORK_ORDERS.map(w=>(
+            {workOrders.map(w=>(
               <tr key={w.id} style={{ borderBottom:"1px solid var(--c-row-border)" }}>
                 <td style={wo.td}><span style={{ fontSize:12, fontWeight:700, color:"#2563eb" }}>{w.id}</span></td>
                 <td style={wo.td}>
@@ -417,7 +455,13 @@ function WorkOrdersTab() {
 }
 
 // ─── Asset Tracking tab ───────────────────────────────────────────────────────
-function AssetTrackingTab() {
+function AssetTrackingTab({
+  assets,
+  summary,
+}: {
+  assets: Asset[];
+  summary: AssetSummary | null;
+}) {
   const [view, setView] = useState<"list"|"map">("list");
   return (
     <div>
@@ -440,10 +484,10 @@ function AssetTrackingTab() {
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:18 }}>
-        <StatMini label="TOTAL ASSETS" value="1,284" trend="+5 this week" trendUp/>
-        <StatMini label="NEEDS ATTENTION" value={12} trend="-2 resolved" trendUp={false}/>
-        <StatMini label="UPCOMING SERVICE" value={48} />
-        <StatMini label="UPTIME RATE" value="99.8%" trend="+0.2%" trendUp/>
+        <StatMini label="TOTAL ASSETS" value={summary?.total ?? "—"} trend="+5 this week" trendUp/>
+        <StatMini label="NEEDS ATTENTION" value={summary?.needsAttention ?? "—"} trend="-2 resolved" trendUp={false}/>
+        <StatMini label="UPCOMING SERVICE" value={summary?.upcomingService ?? "—"} />
+        <StatMini label="UPTIME RATE" value={summary?.uptimeRate != null ? `${summary.uptimeRate}%` : "—"} trend="+0.2%" trendUp/>
       </div>
 
       {/* Search & filters */}
@@ -467,7 +511,7 @@ function AssetTrackingTab() {
             </tr>
           </thead>
           <tbody>
-            {ASSETS.map(a=>(
+            {assets.map(a=>(
               <tr key={a.id} style={{ borderBottom:"1px solid var(--c-row-border)" }}>
                 <td style={wo.td}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -503,7 +547,7 @@ function AssetTrackingTab() {
 }
 
 // ─── Reports tab ──────────────────────────────────────────────────────────────
-function ReportsTab() {
+function ReportsTab({ reports }: { reports: typeof REPORTS }) {
   const [tab, setTab] = useState<ReportTab>("overview");
   const RTABS: { id: ReportTab; label: string }[] = [
     { id:"overview", label:"Overview" }, { id:"financial", label:"Financial" },
@@ -596,7 +640,7 @@ function ReportsTab() {
             </tr>
           </thead>
           <tbody>
-            {REPORTS.map(r=>(
+            {reports.map(r=>(
               <tr key={r.id} style={{ borderBottom:"1px solid var(--c-row-border)" }}>
                 <td style={wo.td}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -631,8 +675,170 @@ const TAB_DEFS: { id: MainTab; label: string; icon: React.ElementType }[] = [
 export function PropertyManagementPage() {
   const [tab, setTab] = useState<MainTab>("list");
   const [showAddProp, setShowAddProp] = useState(false);
+  const { showToast } = useToast();
+
+  const [properties, setProperties] = useState<Property[]>(PROPERTIES);
+  const [propertySummary, setPropertySummary] = useState<PropertySummary | null>(null);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(WORK_ORDERS);
+  const [assets, setAssets] = useState<Asset[]>(ASSETS);
+  const [assetSummary, setAssetSummary] = useState<AssetSummary | null>(null);
+  const [reports, setReports] = useState(REPORTS);
 
   useShellHeader({ showSearch: true });
+
+  function normalizeProperty(p: Record<string, unknown>, idx: number): Property {
+    const type = String(p.propertyType ?? p.category ?? "Commercial");
+    const amc = String(p.amcStatus ?? "Active");
+    const mapType: PropertyType =
+      type.toLowerCase().includes("res") ? "Residential" :
+      type.toLowerCase().includes("ind") ? "Industrial" : "Commercial";
+    const mapAmc: AMCStatus =
+      amc.toLowerCase().includes("expire") && amc.toLowerCase().includes("soon") ? "Expiring Soon" :
+      amc.toLowerCase().includes("expire") ? "Expired" : "Active";
+
+    return {
+      id: idx + 1,
+      name: String(p.propertyName ?? p.name ?? "—"),
+      address: String(p.location ?? [p.city, p.stateProvince].filter(Boolean).join(", ") ?? "—"),
+      type: mapType,
+      totalUnits: Number(p.totalUnits ?? 245) || 0,
+      unitsSold: Number(p.unitsSold ?? 0) || 0,
+      unitsUnsold: Number(p.unitsUnsold ?? 0) || 0,
+      amcStatus: mapAmc,
+      gradFrom: "#1e3a5f",
+      gradTo: "#2563eb",
+    };
+  }
+
+  function normalizeWorkOrderFromTask(t: Record<string, unknown>, idx: number): WorkOrder {
+    const title = String(t.title ?? t.taskName ?? "Work Order");
+    const status = String(t.status ?? "New").toUpperCase().replace(/\\s/g, "_");
+    const priority = String(t.priority ?? "Medium").toLowerCase();
+    const pMap: WOPriority =
+      priority.includes("urgent") ? "Emergency" :
+      priority.includes("high") ? "High" :
+      priority.includes("low") ? "Low" : "Medium";
+    const sMap: WOStatus =
+      status.includes("IN_PROGRESS") ? "In Progress" :
+      status.includes("COMPLETED") ? "Completed" :
+      status.includes("ON_HOLD") ? "On Hold" :
+      status.includes("ASSIGNED") ? "Assigned" : "New";
+    const assignee =
+      (t.assignee as { name?: string } | undefined)?.name ??
+      (t.assigneeName as string | undefined) ??
+      null;
+    return {
+      id: String(t._id ?? t.id ?? `WO-${idx + 1}`),
+      description: title,
+      descSub: String(t.description ?? "—"),
+      priority: pMap,
+      status: sMap,
+      staff: assignee,
+      dueDate: String(t.dueDate ?? "—"),
+    };
+  }
+
+  function normalizeAsset(a: Record<string, unknown>, idx: number): Asset {
+    const condition = String(a.condition ?? a.status ?? "Good").toLowerCase();
+    const cMap: AssetCondition =
+      condition.includes("excellent") ? "Excellent" :
+      condition.includes("fair") ? "Fair" :
+      condition.includes("poor") ? "Poor" : "Good";
+    return {
+      id: idx + 1,
+      name: String(a.name ?? a.assetName ?? "—"),
+      icon: "wrench",
+      location: String(a.location ?? a.zone ?? "—"),
+      condition: cMap,
+      lastMaint: String(a.lastMaint ?? a.lastMaintenance ?? "—"),
+      nextService: String(a.nextService ?? a.nextMaintenance ?? "—"),
+      overdue: Boolean(a.nextServiceUrgent ?? a.overdue),
+    };
+  }
+
+  function normalizeReport(r: Record<string, unknown>, idx: number) {
+    const cat = String(r.category ?? "Operational");
+    const catLower = cat.toLowerCase();
+    const palette =
+      catLower.includes("fin")
+        ? { catColor: "#1d4ed8", catBg: "#eff6ff", icon: "file" }
+        : catLower.includes("sus")
+          ? { catColor: "#15803d", catBg: "#f0fdf4", icon: "zap" }
+          : { catColor: "#475569", catBg: "#f8fafc", icon: "settings" };
+    return {
+      id: idx + 1,
+      name: String(r.name ?? r.title ?? "Report"),
+      icon: palette.icon,
+      category: cat,
+      catColor: palette.catColor,
+      catBg: palette.catBg,
+      date: String(r.generatedDate ?? r.createdAt ?? "—"),
+    };
+  }
+
+  async function refreshAll() {
+    try {
+      const [propsRaw, propSum, taskRaw, assetsRaw, assetSum, reportsRaw] = await Promise.all([
+        getProperties({}),
+        getPropertySummary().catch(() => null),
+        getTasks({}).catch(() => []),
+        getAssets({}).catch(() => ({ list: [] })),
+        getAssetSummary().catch(() => null),
+        getReports({}).catch(() => ({ list: [] })),
+      ]);
+
+      if (Array.isArray(propsRaw) && propsRaw.length) {
+        setProperties(propsRaw.map((p, idx) => normalizeProperty(p as Record<string, unknown>, idx)));
+      }
+
+      if (propSum && typeof propSum === "object") {
+        const d = (propSum as { data?: Record<string, unknown> }).data ?? (propSum as Record<string, unknown>);
+        setPropertySummary({
+          total: Number(d.total ?? 0) || 0,
+          activeAmc: Number(d.activeAmcCount ?? d.activeAmc ?? 0) || 0,
+          expiringAmc: Number(d.expiringAmcCount ?? d.expiringAmc ?? 0) || 0,
+          occupancyPercent: Number(d.occupancy ?? d.occupancyPercent ?? 0) || 0,
+        });
+      }
+
+      if (Array.isArray(taskRaw) && taskRaw.length) {
+        setWorkOrders(taskRaw.map((t, idx) => normalizeWorkOrderFromTask(t as Record<string, unknown>, idx)));
+      }
+
+      const aList =
+        (assetsRaw as { data?: unknown; list?: unknown[]; total?: unknown }).data ??
+        (assetsRaw as { list?: unknown[] }).list ??
+        [];
+      if (Array.isArray(aList) && aList.length) {
+        setAssets(aList.map((a, idx) => normalizeAsset(a as Record<string, unknown>, idx)));
+      }
+
+      if (assetSum && typeof assetSum === "object") {
+        const d = (assetSum as { data?: Record<string, unknown> }).data ?? (assetSum as Record<string, unknown>);
+        setAssetSummary({
+          total: Number(d.total ?? 0) || 0,
+          needsAttention: Number(d.needsAttention ?? d.needs_attention ?? 0) || 0,
+          upcomingService: Number(d.upcomingService ?? d.upcoming_service ?? 0) || 0,
+          uptimeRate: Number(d.uptimeRate ?? d.uptime_rate ?? 0) || 0,
+        });
+      }
+
+      const rList =
+        (reportsRaw as { data?: unknown; list?: unknown[] }).data ??
+        (reportsRaw as { list?: unknown[] }).list ??
+        [];
+      if (Array.isArray(rList) && rList.length) {
+        setReports(rList.map((r, idx) => normalizeReport(r as Record<string, unknown>, idx)));
+      }
+    } catch (e) {
+      showToast("error", "Failed to sync properties data", e instanceof Error ? e.message : "Please try again.");
+    }
+  }
+
+  useEffect(() => {
+    void refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
@@ -660,13 +866,24 @@ export function PropertyManagementPage() {
       </div>
 
       {/* Tab content */}
-      {tab === "list"       && <PropertyListTab onAddProperty={() => setShowAddProp(true)} />}
-      {tab === "workorders" && <WorkOrdersTab />}
-      {tab === "assets"     && <AssetTrackingTab />}
-      {tab === "reports"    && <ReportsTab />}
+      {tab === "list" && (
+        <PropertyListTab
+          properties={properties}
+          summary={propertySummary}
+          onAddProperty={() => setShowAddProp(true)}
+        />
+      )}
+      {tab === "workorders" && <WorkOrdersTab workOrders={workOrders} />}
+      {tab === "assets" && <AssetTrackingTab assets={assets} summary={assetSummary} />}
+      {tab === "reports" && <ReportsTab reports={reports} />}
 
       {/* Modals */}
-      {showAddProp && <AddPropertyModal onClose={() => setShowAddProp(false)} />}
+      {showAddProp && (
+        <AddPropertyModal
+          onClose={() => setShowAddProp(false)}
+          onAdded={() => void refreshAll()}
+        />
+      )}
     </div>
   );
 }

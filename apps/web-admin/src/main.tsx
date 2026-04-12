@@ -6,7 +6,18 @@ import "@madhuban/theme/tokens.css";
 import App from "./App.tsx";
 import "./index.css";
 
-configureApiBaseUrl(import.meta.env.DEV ? "" : null);
+/** Match FRONTEND_API_INTEGRATION.md: `VITE_API_URL` or `VITE_API_BASE_URL` = base without `/api`. */
+const viteApiRoot = [import.meta.env.VITE_API_URL, import.meta.env.VITE_API_BASE_URL]
+  .map((v) => (typeof v === "string" ? v.trim().replace(/\/+$/, "") : ""))
+  .find((v) => v.length > 0);
+
+if (viteApiRoot) {
+  configureApiBaseUrl(viteApiRoot);
+} else if (import.meta.env.DEV) {
+  configureApiBaseUrl("");
+} else {
+  configureApiBaseUrl(null);
+}
 configureAuthTokenGetter(() => localStorage.getItem("token"));
 
 createRoot(document.getElementById("root")!).render(

@@ -1,8 +1,9 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { checkIn, checkOut } from "@madhuban/api";
 import { colors, font, radii, space } from "@madhuban/theme";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../../components/Button";
@@ -59,6 +60,8 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
   const [insideGeofence, setInsideGeofence] = useState(true);
   const [selfieTaken, setSelfieTaken] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const zoneStatusText = insideGeofence ? "GPS ACTIVE" : "OUT OF ZONE";
@@ -69,11 +72,34 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
     if (!insideGeofence) return;
     setSelfieTaken(true);
     setConfirmed(false);
+    setStatusMessage(null);
   }
 
-  function handlePrimaryAction() {
+  useEffect(() => {
+    return () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    };
+  }, []);
+
+  async function handlePrimaryAction() {
     if (!actionEnabled) return;
-    setConfirmed(true);
+    setSubmitting(true);
+    setStatusMessage(null);
+    try {
+      if (mode === "check-in") {
+        await checkIn("Head Office, Shivaji Nagar");
+      } else {
+        await checkOut();
+      }
+      setConfirmed(true);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : `Unable to ${mode.replace("-", " ")} right now.`,
+      );
+      return;
+    } finally {
+      setSubmitting(false);
+    }
     redirectTimer.current = setTimeout(() => {
       router.replace(getRoleHomePath(role));
     }, 1200);
@@ -235,6 +261,8 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
           title={
             confirmed
               ? copy.confirmedAction
+              : submitting
+                ? "Submitting..."
               : insideGeofence
                 ? selfieTaken
                   ? copy.primaryAction
@@ -242,12 +270,12 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
                 : "Outside Geo-fence"
           }
           onPress={handlePrimaryAction}
-          disabled={!actionEnabled && !confirmed}
+          disabled={submitting || (!actionEnabled && !confirmed)}
           variant={confirmed ? "success" : "primary"}
         />
 
         <Text style={styles.helperText}>
-          {confirmed ? "Shift starts at 08:00 AM" : copy.helper}
+          {statusMessage ?? (confirmed ? "Attendance recorded successfully." : copy.helper)}
         </Text>
       </RefreshableScrollView>
     </View>

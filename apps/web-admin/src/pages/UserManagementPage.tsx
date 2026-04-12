@@ -24,11 +24,13 @@ import {
 } from "../components/users/types";
 import { useShellHeader } from "../context/ShellHeaderContext";
 import { useToast } from "../context/ToastContext";
+import { createUser, deleteUser, getUsers, updateUser } from "@madhuban/api";
+import { useEffect } from "react";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const INITIAL_USERS: User[] = [
   {
-    id: 1, name: "Johnathan Doe", email: "j.doe@facilitymanagement.com",
+    id: 1, apiId: "demo-1", name: "Johnathan Doe", email: "j.doe@facilitymanagement.com",
     phone: "+1 (555) 902-3481", jobTitle: "Senior Facility Manager",
     role: "Admin", status: "Active", lastLogin: "2 hours ago",
     initials: "JD", avatarColor: "#6366f1",
@@ -38,34 +40,34 @@ const INITIAL_USERS: User[] = [
     facilities: ["North Wing Plaza", "Central Tower"],
   },
   {
-    id: 2, name: "Sarah Chen", email: "s.chen@facilitymanagement.com",
+    id: 2, apiId: "demo-2", name: "Sarah Chen", email: "s.chen@facilitymanagement.com",
     phone: "+1 (555) 234-5678", jobTitle: "Facility Manager",
     role: "Manager", status: "Active", lastLogin: "5 mins ago",
     initials: "SC", avatarColor: "#0ea5e9",
     department: "Facilities", facilities: ["North Wing Plaza", "Downtown Tech Hub"],
   },
   {
-    id: 3, name: "Mike Ross", email: "m.ross@facilitymanagement.com",
+    id: 3, apiId: "demo-3", name: "Mike Ross", email: "m.ross@facilitymanagement.com",
     phone: "+1 (555) 345-6789", jobTitle: "Operations Supervisor",
     role: "Supervisor", status: "Suspended", lastLogin: "1 day ago",
     initials: "MR", avatarColor: "#f59e0b",
     department: "Operations", facilities: ["East Logistics Center"],
   },
   {
-    id: 4, name: "Emily Watson", email: "e.watson@facilitymanagement.com",
+    id: 4, apiId: "demo-4", name: "Emily Watson", email: "e.watson@facilitymanagement.com",
     phone: "+1 (555) 456-7890", jobTitle: "Maintenance Staff",
     role: "Staff", status: "Active", lastLogin: "3 days ago",
     initials: "EW", avatarColor: "#10b981",
     department: "Maintenance", facilities: ["Southern Solar Farm"],
   },
   {
-    id: 5, name: "Rajiv Malhotra", email: "r.malhotra@facilitymanagement.com",
+    id: 5, apiId: "demo-5", name: "Rajiv Malhotra", email: "r.malhotra@facilitymanagement.com",
     role: "Supervisor", status: "Active", lastLogin: "Just now",
     initials: "RM", avatarColor: "#8b5cf6", department: "Security",
     facilities: [],
   },
   {
-    id: 6, name: "Priya Nair", email: "p.nair@facilitymanagement.com",
+    id: 6, apiId: "demo-6", name: "Priya Nair", email: "p.nair@facilitymanagement.com",
     role: "Staff", status: "Active", lastLogin: "10 mins ago",
     initials: "PN", avatarColor: "#ec4899", department: "Housekeeping",
     facilities: [],
@@ -89,6 +91,57 @@ export function UserManagementPage() {
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+
+  const AVATAR_COLORS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#8b5cf6","#ec4899","#2563eb","#64748b"];
+
+  function toUser(raw: Record<string, unknown>, idx: number): User {
+    const name = String(raw.name ?? raw.fullName ?? raw.username ?? raw.email ?? "—");
+    const email = String(raw.email ?? "—");
+    const role = String(raw.role ?? "Staff");
+    const status = String(raw.status ?? "Active");
+    const initials = name
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+    return {
+      id: idx + 1,
+      apiId: String(raw._id ?? raw.id ?? ""),
+      name,
+      email,
+      phone: raw.phone ? String(raw.phone) : undefined,
+      jobTitle: raw.jobTitle ? String(raw.jobTitle) : undefined,
+      role: (role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()) as UserRole,
+      status: (status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()) as UserStatus,
+      lastLogin: String(raw.lastLogin ?? raw.lastLoginAt ?? "-"),
+      initials: initials || "U",
+      avatarColor: AVATAR_COLORS[idx % AVATAR_COLORS.length],
+      department: raw.department ? String(raw.department) : undefined,
+      facilities: Array.isArray(raw.facilities) ? (raw.facilities as string[]) : undefined,
+    };
+  }
+
+  async function refreshUsers() {
+    try {
+      setLoading(true);
+      const list = (await getUsers()) as Record<string, unknown>[];
+      if (!Array.isArray(list) || list.length === 0) return;
+      setUsers(list.map(toUser));
+    } catch (e) {
+      console.error(e);
+      showToast("error", "Failed to load users", e instanceof Error ? e.message : "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useShellHeader({
     title: "User Management",
@@ -113,20 +166,50 @@ export function UserManagementPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  function handleAdd(u: User) {
-    setUsers((prev) => [...prev, u]);
-    showToast("success", "User Added!", `${u.name} has been successfully created.`);
+  async function handleAdd(u: User) {
+    try {
+      await createUser({
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        status: u.status,
+        jobTitle: u.jobTitle,
+        department: u.department,
+      });
+      await refreshUsers();
+      showToast("success", "User Added!", `${u.name} has been successfully created.`);
+    } catch (e) {
+      showToast("error", "Failed to create user", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
-  function handleSaveEdit(updated: User) {
-    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-    showToast("success", "Updated Successfully", `${updated.name}'s profile has been saved.`);
+  async function handleSaveEdit(updated: User) {
+    try {
+      await updateUser(updated.apiId, {
+        name: updated.name,
+        email: updated.email,
+        username: updated.email,
+        role: updated.role,
+        status: updated.status,
+        phone: updated.phone,
+        jobTitle: updated.jobTitle,
+      });
+      await refreshUsers();
+      showToast("success", "Updated Successfully", `${updated.name}'s profile has been saved.`);
+    } catch (e) {
+      showToast("error", "Failed to update user", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
-  function handleDelete(id: number) {
-    const user = users.find((u) => u.id === id);
-    setUsers((prev) => prev.filter((u) => u.id !== id));
-    showToast("error", "User Deleted", `${user?.name ?? "User"} has been permanently removed.`);
+  async function handleDelete(u: User) {
+    try {
+      await deleteUser(u.apiId);
+      await refreshUsers();
+      showToast("error", "User Deleted", `${u.name} has been permanently removed.`);
+    } catch (e) {
+      showToast("error", "Failed to delete user", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
   return (
@@ -152,7 +235,17 @@ export function UserManagementPage() {
             <button style={ts.iconBtn}>
               <Filter size={14} /> Advanced Filters
             </button>
-            <button style={{ ...ts.iconBtn, minWidth: "auto", padding: "7px 10px" }} onClick={() => { setUsers(INITIAL_USERS); setSearch(""); setRoleFilter(""); setStatusFilter(""); setPage(1); }}>
+            <button
+              style={{ ...ts.iconBtn, minWidth: "auto", padding: "7px 10px" }}
+              onClick={() => {
+                setSearch("");
+                setRoleFilter("");
+                setStatusFilter("");
+                setPage(1);
+                void refreshUsers();
+              }}
+              title="Refresh"
+            >
               <RefreshCw size={14} />
             </button>
           </div>
@@ -212,7 +305,7 @@ export function UserManagementPage() {
             {paged.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", padding: "36px 16px", color: "var(--c-text-faint)", fontSize: 13 }}>
-                  No users match the current filters.
+                  {loading ? "Loading users…" : "No users match the current filters."}
                 </td>
               </tr>
             )}
@@ -266,7 +359,7 @@ export function UserManagementPage() {
         <DeleteUserModal
           user={modal.user}
           onClose={() => setModal({ type: "none" })}
-          onConfirm={() => handleDelete(modal.user.id)}
+          onConfirm={() => void handleDelete(modal.user)}
         />
       )}
     </div>

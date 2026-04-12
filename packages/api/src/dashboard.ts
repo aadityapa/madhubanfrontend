@@ -1,11 +1,11 @@
 import { getApiBaseUrl } from "./env";
+import { getAuthHeaders, readJsonOrThrow, unwrapApiData } from "./client";
 
 const API_BASE = () => `${getApiBaseUrl()}/api/dashboard`;
 
 async function getJson(path: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}${path}`);
-  if (!res.ok) throw new Error(`Dashboard API error: ${res.status}`);
-  return res.json();
+  const res = await fetch(`${API_BASE()}${path}`, { headers: getAuthHeaders() });
+  return unwrapApiData(await readJsonOrThrow(res));
 }
 
 export async function getDashboardMetrics(): Promise<Record<string, unknown>> {

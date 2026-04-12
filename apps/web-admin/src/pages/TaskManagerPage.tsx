@@ -1,7 +1,7 @@
 import {
   Calendar,
   CheckCircle2,
-  Clock,
+  ClipboardCheck,
   Eye,
   FileText,
   MapPin,
@@ -13,9 +13,17 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Task as ApiTask } from "@madhuban/types";
 import { useShellHeader } from "../context/ShellHeaderContext";
 import { useToast } from "../context/ToastContext";
+import {
+  createTask,
+  getTasks,
+  getUsersForAssignee,
+  updateTask,
+  updateTaskStatus,
+} from "@madhuban/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TaskStatus = "todo" | "inprogress" | "review" | "completed";
@@ -23,6 +31,7 @@ type TaskPriority = "HIGH PRIORITY" | "MEDIUM" | "LOW" | "URGENT" | "NORMAL";
 type MetaType = "required" | "date" | "progress" | "proof" | "finished";
 
 interface TaskAssignee {
+  id?: string;
   name: string;
   initials: string;
   color: string;
@@ -55,6 +64,8 @@ interface Task {
   fullDescription?: string;
   activity?: ActivityEntry[];
 }
+
+type AssigneeOption = { id: string; name: string };
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const INITIAL_TASKS: Task[] = [
@@ -138,7 +149,7 @@ const PRIORITY_STYLE: Record<TaskPriority, { bg: string; color: string }> = {
 // ─── Meta badge renderer ──────────────────────────────────────────────────────
 function MetaBadge({ meta, type }: { meta: string; type?: MetaType }) {
   if (!meta) return null;
-  if (type === "required")  return <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>📋 Required</span>;
+  if (type === "required")  return <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", display: "inline-flex", alignItems: "center", gap: 5 }}><ClipboardCheck size={12} /> Required</span>;
   if (type === "date")      return <span style={{ fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", gap: 4 }}><Calendar size={12}/>{meta}</span>;
   if (type === "proof")     return <span style={{ fontSize: 12, fontWeight: 600, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={12}/> {meta}</span>;
   if (type === "finished")  return <span style={{ fontSize: 12, color: "#94a3b8" }}>{meta}</span>;
@@ -343,24 +354,26 @@ function TaskDetailModal({
 // ─── Create / Edit Task Modal ─────────────────────────────────────────────────
 interface TaskForm {
   title: string; category: string; description: string;
-  assignee: string; priority: "HIGH" | "MEDIUM" | "LOW";
+  assigneeId: string; assigneeName: string; priority: "HIGH" | "MEDIUM" | "LOW";
   area: string; frequency: string;
   startTime: string; endTime: string; duration: string;
 }
 
 const EMPTY_FORM: TaskForm = {
   title: "", category: "Maintenance", description: "",
-  assignee: "Rahul", priority: "MEDIUM",
+  assigneeId: "", assigneeName: "", priority: "MEDIUM",
   area: "Outside Main Door", frequency: "Daily, Weekly, Weekends",
   startTime: "", endTime: "", duration: "",
 };
 
 function CreateTaskModal({
   initial,
+  assignees,
   onClose,
   onSave,
 }: {
   initial?: TaskForm;
+  assignees: AssigneeOption[];
   onClose: () => void;
   onSave: (f: TaskForm) => void;
 }) {
@@ -405,8 +418,23 @@ function CreateTaskModal({
           <SectionHdr label="ASSIGNMENT & PRIORITY" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <CFField label="Assignee">
-              <select style={cf.input} value={form.assignee} onChange={e => set("assignee", e.target.value)}>
-                {["Rahul", "M. Chen", "S. Blake", "J. Thompson", "D. Vance", "K. Miller"].map(n => <option key={n} value={n}>{n}</option>)}
+              <select
+                style={cf.input}
+                value={form.assigneeId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const found = assignees.find((a) => a.id === id);
+                  set("assigneeId", id);
+                  set("assigneeName", found?.name ?? "");
+                }}
+                required
+              >
+                <option value="">Select staff member</option>
+                {assignees.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
               </select>
             </CFField>
             <CFField label="Priority">
@@ -487,43 +515,154 @@ export function TaskManagerPage() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
 
   useShellHeader({ showSearch: true });
 
-  function handleCreate(form: TaskForm) {
-    const newTask: Task = {
-      id: `TK-${9000 + tasks.length}`,
-      title: form.title,
-      description: form.description,
-      priority: (form.priority === "HIGH" ? "HIGH PRIORITY" : form.priority) as TaskPriority,
-      status: "todo",
-      assignedTo: { name: form.assignee, initials: form.assignee.slice(0, 2).toUpperCase(), color: "#6366f1" },
-      location: form.area,
-      startTime: form.startTime,
-      endTime: form.endTime,
-      duration: form.duration,
-      activity: [{ label: "Created", detail: "Task created", time: "Just now", active: true }],
+  function statusFromApi(s: string | undefined): TaskStatus {
+    const raw = String(s ?? "").toUpperCase().replace(/\s/g, "_");
+    if (raw === "IN_PROGRESS") return "inprogress";
+    if (raw === "REVIEW" || raw === "PENDING_APPROVAL") return "review";
+    if (raw === "COMPLETED") return "completed";
+    return "todo";
+  }
+
+  function uiStatusToApi(s: TaskStatus): string {
+    if (s === "inprogress") return "IN_PROGRESS";
+    if (s === "review") return "REVIEW";
+    if (s === "completed") return "COMPLETED";
+    return "TO_DO";
+  }
+
+  function toUiTask(t: ApiTask, idx: number): Task {
+    const assigneeName = t.assignee?.name ?? "Unassigned";
+    const initials = assigneeName
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+    const colors = ["#2563eb", "#6366f1", "#0ea5e9", "#7c3aed", "#d97706", "#16a34a", "#64748b"];
+    const id = String(t._id ?? t.id ?? "");
+    return {
+      id,
+      title: String(t.title ?? t.taskName ?? "Untitled Task"),
+      description: String(t.description ?? ""),
+      priority: (String(t.priority ?? "NORMAL").toUpperCase() as TaskPriority) ?? "NORMAL",
+      status: statusFromApi(String(t.status ?? "")),
+      assignedTo: {
+        id: t.assigneeId ?? undefined,
+        name: assigneeName,
+        initials: initials || "U",
+        color: colors[idx % colors.length],
+      },
+      location: t.locationFloor ?? t.roomNumber ?? t.propertyName ?? undefined,
+      startTime: t.startTime != null ? String(t.startTime) : undefined,
+      endTime: t.endTime != null ? String(t.endTime) : undefined,
+      duration: t.timeDuration != null ? String(t.timeDuration) : undefined,
+      meta: t.dueDate ? String(t.dueDate) : undefined,
+      metaType: t.dueDate ? "date" : undefined,
     };
-    setTasks(prev => [...prev, newTask]);
-    showToast("success", "Task Created!", `"${form.title}" has been added to the board.`);
   }
 
-  function handleEdit(form: TaskForm) {
+  async function refreshTasks() {
+    try {
+      setLoading(true);
+      const list = await getTasks({});
+      setTasks((Array.isArray(list) ? list : []).map((t, idx) => toUiTask(t as ApiTask, idx)));
+    } catch (e) {
+      console.error(e);
+      showToast("error", "Failed to load tasks", e instanceof Error ? e.message : "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshAssignees() {
+    try {
+      const list = (await getUsersForAssignee()) as Record<string, unknown>[];
+      const opts = (Array.isArray(list) ? list : [])
+        .map((u) => ({
+          id: String((u as { _id?: unknown; id?: unknown })._id ?? (u as { id?: unknown }).id ?? ""),
+          name: String((u as { name?: unknown }).name ?? (u as { fullName?: unknown }).fullName ?? (u as { email?: unknown }).email ?? "—"),
+        }))
+        .filter((o) => o.id && o.name);
+      setAssignees(opts);
+    } catch (e) {
+      console.error(e);
+      setAssignees([]);
+    }
+  }
+
+  useEffect(() => {
+    void refreshAssignees();
+    void refreshTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleCreate(form: TaskForm) {
+    try {
+      await createTask({
+        title: form.title,
+        description: form.description,
+        assigneeId: form.assigneeId,
+        priority: form.priority,
+        locationFloor: form.area,
+        frequency: form.frequency,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        timeDuration: form.duration,
+      });
+      await refreshTasks();
+      showToast("success", "Task Created!", `"${form.title}" has been added to the board.`);
+    } catch (e) {
+      showToast("error", "Failed to create task", e instanceof Error ? e.message : "Please try again.");
+    }
+  }
+
+  async function handleEdit(form: TaskForm) {
     if (modal.type !== "edit") return;
-    setTasks(prev => prev.map(t => t.id === modal.task.id ? { ...t, title: form.title, description: form.description } : t));
-    showToast("success", "Task Updated!", "Changes saved successfully.");
+    try {
+      await updateTask(modal.task.id, {
+        title: form.title,
+        description: form.description,
+        assigneeId: form.assigneeId,
+        priority: form.priority,
+        locationFloor: form.area,
+        frequency: form.frequency,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        timeDuration: form.duration,
+        status: uiStatusToApi(modal.task.status),
+      });
+      await refreshTasks();
+      showToast("success", "Task Updated!", "Changes saved successfully.");
+    } catch (e) {
+      showToast("error", "Failed to update task", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
-  function handleComplete(task: Task) {
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: "completed" } : t));
-    setModal({ type: "none" });
-    showToast("success", "Task Completed!", `"${task.title}" marked as complete.`);
+  async function handleComplete(task: Task) {
+    try {
+      await updateTaskStatus(task.id, "COMPLETED");
+      await refreshTasks();
+      setModal({ type: "none" });
+      showToast("success", "Task Completed!", `"${task.title}" marked as complete.`);
+    } catch (e) {
+      showToast("error", "Failed to complete task", e instanceof Error ? e.message : "Please try again.");
+    }
   }
 
-  const grouped = STATUS_COLUMNS.map(col => ({
-    ...col,
-    tasks: tasks.filter(t => t.status === col.id),
-  }));
+  const grouped = useMemo(
+    () =>
+      STATUS_COLUMNS.map((col) => ({
+        ...col,
+        tasks: tasks.filter((t) => t.status === col.id),
+      })),
+    [tasks],
+  );
 
   return (
     <div>
@@ -547,7 +686,7 @@ export function TaskManagerPage() {
           </div>
         ))}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--c-text-faint)" }}>
-          <RefreshCw size={13} /> Last updated: 2 mins ago
+          <RefreshCw size={13} /> {loading ? "Refreshing…" : "Synced"}
         </div>
       </div>
 
@@ -583,13 +722,30 @@ export function TaskManagerPage() {
 
       {/* Modals */}
       {modal.type === "create" && (
-        <CreateTaskModal onClose={() => setModal({ type: "none" })} onSave={handleCreate} />
+        <CreateTaskModal
+          assignees={assignees}
+          onClose={() => setModal({ type: "none" })}
+          onSave={(f) => void handleCreate(f)}
+        />
       )}
       {modal.type === "edit" && (
         <CreateTaskModal
-          initial={{ title: modal.task.title, category: "Maintenance", description: modal.task.description, assignee: modal.task.assignedTo.name, priority: "MEDIUM", area: modal.task.location ?? "Outside Main Door", frequency: "Daily, Weekly, Weekends", startTime: "", endTime: "", duration: modal.task.duration ?? "" }}
+          assignees={assignees}
+          initial={{
+            title: modal.task.title,
+            category: "Maintenance",
+            description: modal.task.description,
+            assigneeId: modal.task.assignedTo.id ?? "",
+            assigneeName: modal.task.assignedTo.name,
+            priority: "MEDIUM",
+            area: modal.task.location ?? "Outside Main Door",
+            frequency: "Daily, Weekly, Weekends",
+            startTime: "",
+            endTime: "",
+            duration: modal.task.duration ?? "",
+          }}
           onClose={() => setModal({ type: "none" })}
-          onSave={handleEdit}
+          onSave={(f) => void handleEdit(f)}
         />
       )}
       {modal.type === "view" && (
@@ -597,7 +753,7 @@ export function TaskManagerPage() {
           task={modal.task}
           onClose={() => setModal({ type: "none" })}
           onEdit={() => setModal({ type: "edit", task: modal.task })}
-          onComplete={() => handleComplete(modal.task)}
+          onComplete={() => void handleComplete(modal.task)}
         />
       )}
     </div>

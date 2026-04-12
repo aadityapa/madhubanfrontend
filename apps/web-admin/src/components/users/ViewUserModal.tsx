@@ -5,7 +5,6 @@ import {
   Key,
   KeyRound,
   LogIn,
-  MapPin,
   Shield,
   TrendingDown,
   TrendingUp,
@@ -99,7 +98,7 @@ export function ViewUserModal({
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", align: "center", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button style={vs.editBtn} onClick={onEdit}>
               <User size={14} /> Edit
             </button>

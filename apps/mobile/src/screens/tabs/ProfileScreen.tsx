@@ -1,5 +1,7 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { getCurrentUser } from "@madhuban/api";
 import { router } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
 import { useAuth } from "../../context/AuthContext";
@@ -100,15 +102,46 @@ function getStatusPillStyle(tone: "success" | "warning" | undefined) {
 
 export function ProfileScreen() {
   const { user, clearSession } = useAuth();
+  const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
+
+  const loadProfile = useCallback(async () => {
+    try {
+      const next = await getCurrentUser();
+      setProfile(next);
+    } catch {
+      setProfile(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
 
   async function logout() {
     await clearSession();
     router.replace("/(auth)/login");
   }
 
-  const roleLabel = formatRoleLabel(String(user?.role));
-  const name = user?.name ?? "Rahul Dhumal";
-  const employeeId = user?.id ? `EMP-ID: ${user.id}` : "EMP-ID: MB-0042";
+  const roleLabel = formatRoleLabel(String(profile?.role ?? user?.role));
+  const name = String(profile?.name ?? user?.name ?? "Rahul Dhumal");
+  const employeeId =
+    profile?.id ?? user?.id ? `EMP-ID: ${String(profile?.id ?? user?.id)}` : "EMP-ID: MB-0042";
+  const stats = (profile?.stats as Record<string, unknown> | undefined) ?? {};
+  const profileFacts = [
+    {
+      ...PROFILE_FACTS[0],
+      value: String(
+        (profile?.reportsTo as string | undefined) ??
+          (profile?.managerName as string | undefined) ??
+          PROFILE_FACTS[0].value,
+      ),
+    },
+    {
+      ...PROFILE_FACTS[1],
+      value: String((stats.tasksPerDay as string | number | undefined) ?? PROFILE_FACTS[1].value),
+    },
+    PROFILE_FACTS[2],
+  ] as const;
 
   return (
     <RolePageLayout
@@ -142,10 +175,10 @@ export function ProfileScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        onRefresh={async () => {}}
+        onRefresh={loadProfile}
       >
         <View style={styles.infoCard}>
-          {PROFILE_FACTS.map((item, index) => (
+          {profileFacts.map((item, index) => (
             <View key={item.label}>
               <View style={styles.infoRow}>
                 <View style={styles.infoLabelWrap}>

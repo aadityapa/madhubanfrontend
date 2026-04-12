@@ -20,13 +20,18 @@ function readEnv(): Record<string, string | undefined> {
 }
 
 /**
- * - If `EXPO_PUBLIC_API_BASE_URL` or `VITE_API_BASE_URL` is set (including `""`), that wins.
+ * - If `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_API_BASE_URL` / `VITE_API_URL` / `VITE_API_BASE_URL`
+ *   is set (including `""`), that wins (Node/Expo; web apps should also call `configureApiBaseUrl` from Vite `import.meta.env`).
  * - Else if `configureApiBaseUrl` was called, use it.
  * - Else production → live backend; development → `""` for same-origin / proxy (Vite).
  */
 export function getApiBaseUrl(): string {
   const env = readEnv();
-  const fromEnv = env.EXPO_PUBLIC_API_BASE_URL ?? env.VITE_API_BASE_URL;
+  const fromEnv =
+    env.EXPO_PUBLIC_API_URL ??
+    env.EXPO_PUBLIC_API_BASE_URL ??
+    env.VITE_API_URL ??
+    env.VITE_API_BASE_URL;
   if (fromEnv !== undefined) return fromEnv.replace(/\/+$/, "");
   if (configuredBase !== null) return configuredBase;
   const isDev = env.NODE_ENV !== "production";

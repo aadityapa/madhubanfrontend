@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { getTodayAttendance } from "@madhuban/api";
 import { colors, font, radii, space } from "@madhuban/theme";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -28,19 +29,28 @@ export function AttendanceActionCard({ role }: { role: string | undefined }) {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(CHECKED_IN_KEY).then((val) => {
-        setCheckedIn(val === "true");
-      });
+      let alive = true;
+      (async () => {
+        try {
+          const res = await getTodayAttendance();
+          const data = (res as { data?: unknown } | null)?.data ?? res;
+          const ci = Boolean((data as { checkedIn?: unknown } | null)?.checkedIn);
+          if (alive) setCheckedIn(ci);
+          await AsyncStorage.setItem(CHECKED_IN_KEY, ci ? "true" : "false");
+        } catch {
+          const val = await AsyncStorage.getItem(CHECKED_IN_KEY);
+          if (alive) setCheckedIn(val === "true");
+        }
+      })();
+      return () => {
+        alive = false;
+      };
     }, []),
   );
 
   const action = checkedIn ? CHECK_OUT_ACTION : CHECK_IN_ACTION;
 
   async function handleOpen() {
-    if (!checkedIn) {
-      await AsyncStorage.setItem(CHECKED_IN_KEY, "true");
-      setCheckedIn(true);
-    }
     router.push(getRoleAttendancePath(role, action.key));
   }
 

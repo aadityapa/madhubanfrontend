@@ -11,6 +11,7 @@ import { Stack } from "expo-router";
 import { useEffect } from "react";
 
 const apiBase =
+  process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "") ??
   process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ??
   "https://madhuban360-backend.onrender.com";
 configureApiBaseUrl(apiBase);

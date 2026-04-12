@@ -32,11 +32,44 @@ export {
   getAlerts,
   getActivity,
 } from "./dashboard";
-export { getUsers, getUsersForAssignee, getSupervisors } from "./users";
+export {
+  getUsers,
+  getUsersForAssignee,
+  getSupervisors,
+  getManagers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
+  resetPassword,
+  getRoles,
+  getDepartments,
+  getDepartmentById,
+} from "./users";
+export {
+  getProperties,
+  getPropertyById,
+  getPropertyWithFloors,
+  createProperty,
+  updateProperty,
+  deleteProperty,
+  getPropertySummary,
+  getAssets,
+  getAssetSummary,
+  getReports,
+  getReportsAnalytics,
+} from "./properties";
 export {
   getCurrentUser,
   changePassword,
   updateUserProfile,
   getMyTasks,
+  getMyTaskById,
+  updateMyTaskStatus,
+  startMyTask,
+  submitMyTaskCompletion,
+  checkIn,
+  checkOut,
+  getTodayAttendance,
 } from "./endUser";
 export { getSupervisorDashboard } from "./supervisor";

@@ -73,7 +73,8 @@ function Sidebar() {
   const navigate = useNavigate();
 
   function handleLogout() {
-    // Clear any persisted session here if needed, then redirect to login
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     navigate("/login", { replace: true });
   }
 

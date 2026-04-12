@@ -13,6 +13,17 @@ export function getAuthHeaders(
   return headers;
 }
 
+export function unwrapApiData<T>(payload: unknown): T {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "data" in (payload as Record<string, unknown>)
+  ) {
+    return (payload as { data: T }).data;
+  }
+  return payload as T;
+}
+
 export async function readJsonOrThrow(res: Response): Promise<unknown> {
   const text = await res.text();
   let data: unknown = {};
