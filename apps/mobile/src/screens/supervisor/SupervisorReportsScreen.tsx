@@ -1,10 +1,22 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
+import {
+  getManagerEmployeeShiftReport,
+  getManagerShiftReport,
+  getSupervisorEmployeeShiftReport,
+  getSupervisorShiftReport,
+  type ManagerEmployeeShiftReportResponse,
+  type ManagerShiftReportResponse,
+  type SupervisorEmployeeShiftReportResponse,
+  type SupervisorShiftReportResponse,
+} from "@madhuban/api";
 import { font, radii } from "@madhuban/theme";
 import { StatusBar } from "expo-status-bar";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { SkeletonBlock } from "../../components/SkeletonBlock";
+import { useAuth } from "../../context/AuthContext";
 
 const REPORT_TABS = ["OVERVIEW", "ZONE", "FUNCTION", "EMPLOYEE"] as const;
 
@@ -274,16 +286,236 @@ function statusIcon(status: ZoneTask["status"]) {
   return status === "Approved" ? "check-circle" : "clock";
 }
 
+function formatTime(value: string | null | undefined): string {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function labelCase(value: string): string {
+  return value
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function mapReportTone(percent: number): Tone {
+  if (percent >= 90) return "green";
+  if (percent >= 75) return "blue";
+  if (percent >= 55) return "orange";
+  return "red";
+}
+
+function mapFunctionIcon(key: string): keyof typeof Feather.glyphMap {
+  switch (key) {
+    case "cleaning":
+      return "droplet";
+    case "pantry":
+      return "coffee";
+    case "security_assist":
+      return "shield";
+    case "maintenance":
+      return "tool";
+    default:
+      return "grid";
+  }
+}
+
+function mapReportData(
+  report: SupervisorShiftReportResponse | ManagerShiftReportResponse | null,
+  detailCache: Record<
+    string,
+    SupervisorEmployeeShiftReportResponse | ManagerEmployeeShiftReportResponse
+  >,
+) {
+  if (!report) {
+    return {
+      summary: SUMMARY,
+      zones: ZONES,
+      functions: FUNCTIONS,
+      employees: EMPLOYEES,
+      escalations: ESCALATIONS,
+    };
+  }
+
+  return {
+    summary: {
+      completion: report.overview.completion.percent,
+      approved: report.overview.approvals.approved,
+      pending: report.overview.approvals.pending,
+      rejected: report.overview.approvals.rejected,
+    },
+    zones:
+      report.zones.length > 0
+        ? report.zones.map((zone) => ({
+            key: String(zone.zoneId),
+            name: zone.zoneName,
+            value: zone.percent,
+            checked: `${zone.done} of ${zone.assigned} tasks completed`,
+            tone: mapReportTone(zone.percent),
+            tasks: [] as ZoneTask[],
+          }))
+        : ZONES,
+    functions:
+      report.functions.length > 0
+        ? report.functions.map((item) => ({
+            key: item.functionKey,
+            icon: mapFunctionIcon(item.functionKey),
+            name: item.functionLabel,
+            value: item.percent,
+            tone: (mapReportTone(item.percent) === "red" ? "orange" : mapReportTone(item.percent)) as Exclude<Tone, "red">,
+            totalTasks: item.assigned,
+            approved: item.approved,
+            topPerformer:
+              report.employees.slice().sort((a, b) => b.scorePercent - a.scorePercent)[0]?.name ?? "--",
+            quality: `${item.percent}% Quality`,
+          }))
+        : FUNCTIONS,
+    employees:
+      report.employees.length > 0
+        ? report.employees.map((employee) => {
+            const detail = detailCache[String(employee.staffId)];
+            return {
+              key: String(employee.staffId),
+              initials: employee.initials,
+              name: employee.name,
+              team: "Today's Shift",
+              score: employee.scorePercent,
+              tasks: employee.tasks,
+              onTime: employee.onTimePercent,
+              recentLogs:
+                detail?.logs.map((log) => ({
+                  title: log.title,
+                  time: formatTime(log.time),
+                  rating: log.rating ? `${log.rating}/5` : "--",
+                  status: log.status === "DONE" || log.status === "COMPLETED" ? ("DONE" as const) : ("IN PROG" as const),
+                })) ?? [],
+            };
+          })
+        : EMPLOYEES,
+    escalations:
+      report.escalations.length > 0
+        ? report.escalations.map((item) => ({
+            title: labelCase(item.kind),
+            detail:
+              item.title && item.zoneName
+                ? `${item.title} - ${item.zoneName}`
+                : item.staffName
+                  ? `${item.staffName} - ${item.label}`
+                  : item.label,
+            time: formatTime(item.deadlineAt ?? item.time),
+          }))
+        : ESCALATIONS,
+  };
+}
+
+function ReportsSkeleton({ tab }: { tab: ReportTab }) {
+  if (tab === "EMPLOYEE") {
+    return (
+      <View style={styles.stack}>
+        {[0, 1, 2].map((item) => (
+          <View key={item} style={styles.card}>
+            <View style={{ padding: 16, gap: 12 }}>
+              <SkeletonBlock style={{ height: 18, width: "52%", borderRadius: 8 }} />
+              <SkeletonBlock style={{ height: 56, borderRadius: 16 }} />
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.stack}>
+      {[0, 1, 2].map((item) => (
+        <View key={item} style={styles.card}>
+          <View style={{ padding: 18, gap: 12 }}>
+            <SkeletonBlock style={{ height: 16, width: "44%", borderRadius: 8 }} />
+            <SkeletonBlock style={{ height: 72, borderRadius: 18 }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function SupervisorReportsScreen() {
+  const { role } = useAuth();
   const insets = useSafeAreaInsets();
+  const normalizedRole = String(role ?? "").trim().toLowerCase();
+  const isSupervisor = normalizedRole === "supervisor";
+  const isManager = normalizedRole === "manager";
+  const supportsReports = isSupervisor || isManager;
   const [selectedTab, setSelectedTab] = useState<ReportTab>("OVERVIEW");
   const [expandedZone, setExpandedZone] = useState<string>("parking");
   const [expandedFunction, setExpandedFunction] = useState<string>("cleaning");
   const [expandedEmployee, setExpandedEmployee] = useState<string>("sunil");
+  const [report, setReport] = useState<
+    SupervisorShiftReportResponse | ManagerShiftReportResponse | null
+  >(null);
+  const [detailCache, setDetailCache] = useState<
+    Record<string, SupervisorEmployeeShiftReportResponse | ManagerEmployeeShiftReportResponse>
+  >({});
+  const [loading, setLoading] = useState(supportsReports);
+  const [loadingEmployeeId, setLoadingEmployeeId] = useState<string | null>(null);
+
+  const loadReport = useCallback(async () => {
+    if (!supportsReports) return;
+    const data = isManager ? await getManagerShiftReport() : await getSupervisorShiftReport();
+    setReport(data);
+    if (data.zones[0]) setExpandedZone(String(data.zones[0].zoneId));
+    if (data.functions[0]) setExpandedFunction(data.functions[0].functionKey);
+    if (data.employees[0]) setExpandedEmployee(String(data.employees[0].staffId));
+  }, [isManager, supportsReports]);
+
+  useEffect(() => {
+    let active = true;
+    if (!supportsReports) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    loadReport()
+      .catch(() => {
+        if (active) setReport(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadReport, supportsReports]);
+
+  const ui = useMemo(() => mapReportData(report, detailCache), [detailCache, report]);
 
   const activeFunction = useMemo(
-    () => FUNCTIONS.find((item) => item.key === expandedFunction) ?? FUNCTIONS[0],
-    [expandedFunction]
+    () => ui.functions.find((item) => item.key === expandedFunction) ?? ui.functions[0],
+    [expandedFunction, ui.functions]
+  );
+
+  const loadEmployeeDetail = useCallback(
+    async (employeeKey: string) => {
+      if (!supportsReports || detailCache[employeeKey]) return;
+      setLoadingEmployeeId(employeeKey);
+      try {
+        const detail = isManager
+          ? await getManagerEmployeeShiftReport(employeeKey)
+          : await getSupervisorEmployeeShiftReport(employeeKey);
+        setDetailCache((current) => ({ ...current, [employeeKey]: detail }));
+      } finally {
+        setLoadingEmployeeId(null);
+      }
+    },
+    [detailCache, isManager, supportsReports],
   );
 
   function renderOverview() {
@@ -291,7 +523,7 @@ export function SupervisorReportsScreen() {
       <View style={styles.stack}>
         <View style={styles.card}>
           <View style={styles.summaryCard}>
-            <CompletionRing value={SUMMARY.completion} />
+            <CompletionRing value={ui.summary.completion} />
 
             <View style={styles.summaryLegend}>
               <View style={styles.summaryRow}>
@@ -299,7 +531,7 @@ export function SupervisorReportsScreen() {
                   <View style={[styles.summaryDot, styles.summaryDotApproved]} />
                   <Text style={styles.summaryLabel}>Approved</Text>
                 </View>
-                <Text style={styles.summaryValue}>{SUMMARY.approved}</Text>
+                <Text style={styles.summaryValue}>{ui.summary.approved}</Text>
               </View>
 
               <View style={styles.summaryRow}>
@@ -307,7 +539,7 @@ export function SupervisorReportsScreen() {
                   <View style={[styles.summaryDot, styles.summaryDotPending]} />
                   <Text style={styles.summaryLabel}>Pending</Text>
                 </View>
-                <Text style={styles.summaryValue}>{SUMMARY.pending}</Text>
+                <Text style={styles.summaryValue}>{ui.summary.pending}</Text>
               </View>
 
               <View style={styles.summaryRow}>
@@ -315,7 +547,7 @@ export function SupervisorReportsScreen() {
                   <View style={[styles.summaryDot, styles.summaryDotRejected]} />
                   <Text style={styles.summaryLabel}>Rejected</Text>
                 </View>
-                <Text style={styles.summaryValue}>{SUMMARY.rejected}</Text>
+                <Text style={styles.summaryValue}>{ui.summary.rejected}</Text>
               </View>
             </View>
           </View>
@@ -327,11 +559,11 @@ export function SupervisorReportsScreen() {
               <Ionicons name="location-outline" size={14} color="#4F7CFF" />
               <Text style={styles.sectionTitle}>Zone Completion</Text>
             </View>
-            <Text style={styles.sectionMeta}>4 Zones Active</Text>
+            <Text style={styles.sectionMeta}>{ui.zones.length} Zones Active</Text>
           </View>
 
           <View style={styles.zoneList}>
-            {ZONES.map((zone) => (
+            {ui.zones.map((zone) => (
               <View key={zone.key} style={styles.zoneBlock}>
                 <View style={styles.zoneHeadline}>
                   <Text style={styles.zoneName}>{zone.name}</Text>
@@ -357,7 +589,7 @@ export function SupervisorReportsScreen() {
           </View>
 
           <View style={styles.healthGrid}>
-            {FUNCTIONS.map((item, index) => (
+            {ui.functions.map((item, index) => (
               <View
                 key={item.key}
                 style={[
@@ -391,10 +623,10 @@ export function SupervisorReportsScreen() {
           </View>
 
           <View style={styles.makerList}>
-            {EMPLOYEES.map((maker, index) => (
+            {ui.employees.map((maker, index) => (
               <View
                 key={maker.key}
-                style={[styles.makerRow, index !== EMPLOYEES.length - 1 && styles.makerBorder]}
+                style={[styles.makerRow, index !== ui.employees.length - 1 && styles.makerBorder]}
               >
                 <Text style={styles.rankText}>#{index + 1}</Text>
                 <View style={styles.makerAvatar}>
@@ -422,12 +654,12 @@ export function SupervisorReportsScreen() {
           </View>
 
           <View style={styles.escalationList}>
-            {ESCALATIONS.map((item, index) => (
+            {ui.escalations.map((item, index) => (
               <View
                 key={item.title}
                 style={[
                   styles.escalationRow,
-                  index !== ESCALATIONS.length - 1 && styles.escalationBorder,
+                  index !== ui.escalations.length - 1 && styles.escalationBorder,
                 ]}
               >
                 <View style={styles.escalationIconWrap}>
@@ -449,7 +681,7 @@ export function SupervisorReportsScreen() {
   function renderZoneTab() {
     return (
       <View style={styles.stack}>
-        {ZONES.map((zone) => {
+        {ui.zones.map((zone) => {
           const expanded = expandedZone === zone.key;
 
           return (
@@ -477,7 +709,7 @@ export function SupervisorReportsScreen() {
                 </View>
               </Pressable>
 
-              {expanded ? (
+              {expanded && zone.tasks.length > 0 ? (
                 <View style={styles.taskList}>
                   {zone.tasks.map((task, index) => (
                     <View
@@ -503,6 +735,12 @@ export function SupervisorReportsScreen() {
                     </View>
                   ))}
                 </View>
+              ) : expanded ? (
+                <View style={styles.taskList}>
+                  <View style={styles.taskRow}>
+                    <Text style={styles.taskHint}>Detailed zone tasks are not exposed by this report endpoint.</Text>
+                  </View>
+                </View>
               ) : null}
             </View>
           );
@@ -514,7 +752,7 @@ export function SupervisorReportsScreen() {
   function renderFunctionTab() {
     return (
       <View style={styles.stack}>
-        {FUNCTIONS.map((item) => {
+        {ui.functions.map((item) => {
           const expanded = expandedFunction === item.key;
 
           return (
@@ -565,7 +803,7 @@ export function SupervisorReportsScreen() {
                   <View style={styles.performerRow}>
                     <View style={styles.performerAvatar}>
                       <Text style={styles.performerAvatarText}>
-                        {activeFunction.topPerformer
+                        {activeFunction?.topPerformer
                           ?.split(" ")
                           .map((part) => part[0])
                           .join("")
@@ -588,14 +826,20 @@ export function SupervisorReportsScreen() {
   function renderEmployeeTab() {
     return (
       <View style={styles.stack}>
-        {EMPLOYEES.map((employee) => {
+        {ui.employees.map((employee) => {
           const expanded = expandedEmployee === employee.key;
 
           return (
             <View key={employee.key} style={styles.card}>
               <Pressable
                 style={styles.employeeHeader}
-                onPress={() => setExpandedEmployee(expanded ? "" : employee.key)}
+                onPress={() => {
+                  const next = expanded ? "" : employee.key;
+                  setExpandedEmployee(next);
+                  if (next) {
+                    void loadEmployeeDetail(next);
+                  }
+                }}
               >
                 <View style={styles.employeeIdentity}>
                   <View style={styles.employeeAvatar}>
@@ -633,7 +877,10 @@ export function SupervisorReportsScreen() {
                   <Text style={styles.employeeSectionTitle}>RECENT SHIFT LOGS</Text>
 
                   <View style={styles.shiftLogList}>
-                    {employee.recentLogs.map((log) => (
+                    {loadingEmployeeId === employee.key && employee.recentLogs.length === 0 ? (
+                      <SkeletonBlock style={{ height: 72, borderRadius: 16 }} />
+                    ) : employee.recentLogs.length > 0 ? (
+                      employee.recentLogs.map((log) => (
                       <View key={`${employee.key}-${log.title}`} style={styles.shiftLogCard}>
                         <View style={styles.shiftLogHeader}>
                           <Text style={styles.shiftLogTitle}>{log.title}</Text>
@@ -662,7 +909,12 @@ export function SupervisorReportsScreen() {
                           Time: {log.time}   Rating: {log.rating}
                         </Text>
                       </View>
-                    ))}
+                    ))
+                    ) : (
+                      <View style={styles.shiftLogCard}>
+                        <Text style={styles.shiftLogMeta}>No shift logs available for this employee.</Text>
+                      </View>
+                    )}
                   </View>
 
                   <Pressable style={styles.historyButton}>
@@ -679,6 +931,10 @@ export function SupervisorReportsScreen() {
   }
 
   function renderContent() {
+    if (loading) {
+      return <ReportsSkeleton tab={selectedTab} />;
+    }
+
     switch (selectedTab) {
       case "ZONE":
         return renderZoneTab();
@@ -726,7 +982,7 @@ export function SupervisorReportsScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        onRefresh={async () => {}}
+        onRefresh={loadReport}
       >
         {renderContent()}
       </RefreshableScrollView>

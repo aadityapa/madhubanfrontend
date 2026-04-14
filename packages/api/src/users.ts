@@ -1,109 +1,181 @@
 import { getApiBaseUrl } from "./env";
-import { getAuthHeaders, readJsonOrThrow } from "./client";
+import { getAuthHeaders, readJsonOrThrow, unwrapApiData } from "./client";
 
 const API_BASE = () => `${getApiBaseUrl()}/api/users`;
 const API_ROLES = () => `${getApiBaseUrl()}/api/roles`;
 const API_DEPARTMENTS = () => `${getApiBaseUrl()}/api/departments`;
 
-function normalizeUser(u: Record<string, unknown>): Record<string, unknown> {
-  const role = String(u.role ?? "");
-  const status = String(u.status ?? "");
-  return {
-    ...u,
-    _id: String(u.id ?? u._id ?? ""),
-    role: role ? role.charAt(0).toUpperCase() + role.slice(1).toLowerCase() : "",
-    status: status
-      ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
-      : "",
-    phone: u.phone ?? u.phoneNumber ?? "",
-    jobTitle: u.jobTitle ?? u.job_title ?? "",
-    department:
-      u.department ?? u.primaryDepartment ?? u.primary_department ?? "",
+export interface UserRelation {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export interface AdminUserRecord {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  manager?: UserRelation | null;
+  supervisor?: UserRelation | null;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+export interface UserListResponse {
+  data: AdminUserRecord[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
   };
 }
 
-export async function getUsers(): Promise<Record<string, unknown>[]> {
-  const res = await fetch(`${API_BASE()}?limit=9999&page=1`, {
+export interface ManagerRecord extends UserRelation {
+  supervisorCount: number;
+}
+
+export interface SupervisorRecord extends UserRelation {
+  manager?: UserRelation | null;
+  staffCount: number;
+}
+
+export interface StaffRecord extends UserRelation {
+  supervisor?: UserRelation | null;
+}
+
+export interface RoleRecord {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapRelation(raw: unknown): UserRelation | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  return {
+    id: Number(value.id ?? 0),
+    name: String(value.name ?? ""),
+    email: String(value.email ?? ""),
+  };
+}
+
+function mapUser(raw: Record<string, unknown>): AdminUserRecord {
+  return {
+    ...raw,
+    id: Number(raw.id ?? 0),
+    name: String(raw.name ?? ""),
+    email: String(raw.email ?? ""),
+    role: String(raw.role ?? ""),
+    manager: mapRelation(raw.manager),
+    supervisor: mapRelation(raw.supervisor),
+    createdAt: raw.createdAt == null ? undefined : String(raw.createdAt),
+  };
+}
+
+export async function getUsers(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<UserListResponse> {
+  const search = new URLSearchParams();
+  if (params?.page) search.set("page", String(params.page));
+  if (params?.limit) search.set("limit", String(params.limit));
+
+  const res = await fetch(
+    `${API_BASE()}${search.toString() ? `?${search.toString()}` : ""}`,
+    { headers: getAuthHeaders() },
+  );
+  const payload = (await readJsonOrThrow(res)) as {
+    data?: unknown[];
+    pagination?: Record<string, unknown>;
+  };
+
+  return {
+    data: Array.isArray(payload.data)
+      ? payload.data.map((item) => mapUser(item as Record<string, unknown>))
+      : [],
+    pagination: {
+      page: Number(payload.pagination?.page ?? params?.page ?? 1),
+      limit: Number(payload.pagination?.limit ?? params?.limit ?? 10),
+      total: Number(payload.pagination?.total ?? 0),
+      totalPages: Number(payload.pagination?.totalPages ?? 1),
+    },
+  };
+}
+
+export async function getManagers(): Promise<ManagerRecord[]> {
+  const res = await fetch(`${API_BASE()}/managers`, {
     headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to fetch users");
-  const json = (await res.json()) as Record<string, unknown>;
-  const users =
-    (json.data as { users?: unknown[] })?.users ??
-    (json as { users?: unknown[] }).users ??
-    (Array.isArray(json) ? json : []);
-  return (users as Record<string, unknown>[]).map(normalizeUser);
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => {
+        const raw = item as Record<string, unknown>;
+        return {
+          id: Number(raw.id ?? 0),
+          name: String(raw.name ?? ""),
+          email: String(raw.email ?? ""),
+          supervisorCount: Number(raw.supervisorCount ?? 0),
+        };
+      })
+    : [];
 }
 
-export async function getUsersForAssignee(): Promise<Record<string, unknown>[]> {
-  try {
-    const res = await fetch(`${API_BASE()}/staff`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error("Failed to fetch staff users");
-    const json = (await res.json()) as Record<string, unknown>;
-    const users =
-      (Array.isArray(json.data) && json.data) ||
-      (json.data as { users?: unknown[] })?.users ||
-      (json as { users?: unknown[] }).users ||
-      (Array.isArray(json) ? json : []);
-    return (users as Record<string, unknown>[]).map(normalizeUser);
-  } catch (err) {
-    console.error("getUsersForAssignee error:", err);
-    return [];
-  }
-}
-
-export async function getSupervisors(): Promise<unknown[]> {
+export async function getSupervisors(): Promise<SupervisorRecord[]> {
   const res = await fetch(`${API_BASE()}/supervisors`, {
     headers: getAuthHeaders(),
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg =
-      (json as { message?: string }).message ??
-      (json as { error?: string }).error ??
-      "Failed to fetch supervisors";
-    throw new Error(msg);
-  }
-  const list =
-    (json as { data?: unknown[] }).data ??
-    (json as { supervisors?: unknown[] }).supervisors ??
-    [];
-  return Array.isArray(list) ? list : [];
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => {
+        const raw = item as Record<string, unknown>;
+        return {
+          id: Number(raw.id ?? 0),
+          name: String(raw.name ?? ""),
+          email: String(raw.email ?? ""),
+          manager: mapRelation(raw.manager),
+          staffCount: Number(raw.staffCount ?? 0),
+        };
+      })
+    : [];
 }
 
-export async function getManagers(): Promise<unknown[]> {
-  const res = await fetch(`${API_BASE()}/managers`, { headers: getAuthHeaders() });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg =
-      (json as { message?: string }).message ??
-      (json as { error?: string }).error ??
-      "Failed to fetch managers";
-    throw new Error(msg);
-  }
-  const list =
-    (json as { data?: unknown[] }).data ??
-    (json as { managers?: unknown[] }).managers ??
-    [];
-  return Array.isArray(list) ? list : [];
+export async function getStaffUsers(): Promise<StaffRecord[]> {
+  const res = await fetch(`${API_BASE()}/staff`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => {
+        const raw = item as Record<string, unknown>;
+        return {
+          id: Number(raw.id ?? 0),
+          name: String(raw.name ?? ""),
+          email: String(raw.email ?? ""),
+          supervisor: mapRelation(raw.supervisor),
+        };
+      })
+    : [];
+}
+
+export async function getUsersForAssignee(): Promise<Record<string, unknown>[]> {
+  const staff = await getStaffUsers();
+  return staff.map((item) => ({
+    id: String(item.id),
+    _id: String(item.id),
+    name: item.name,
+    email: item.email,
+    supervisor: item.supervisor,
+    role: "staff",
+  }));
 }
 
 export async function getUserById(id: string): Promise<Record<string, unknown> | null> {
-  const res = await fetch(`${API_BASE()}/${id}`, { headers: getAuthHeaders() });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg =
-      (json as { message?: string }).message ??
-      (json as { error?: string }).error ??
-      "Failed to fetch user";
-    throw new Error(msg);
-  }
-  const user =
-    (json as { data?: { user?: Record<string, unknown> } }).data?.user ??
-    ((json as { data?: Record<string, unknown> }).data ?? (json as Record<string, unknown>));
-  return user ? (normalizeUser(user as Record<string, unknown>) as Record<string, unknown>) : null;
+  const response = await getUsers({ page: 1, limit: 100 });
+  const match = response.data.find((user) => String(user.id) === id);
+  return match ?? null;
 }
 
 export async function createUser(data: Record<string, unknown>): Promise<unknown> {
@@ -116,19 +188,10 @@ export async function createUser(data: Record<string, unknown>): Promise<unknown
 }
 
 export async function updateUser(id: string, data: Record<string, unknown>): Promise<unknown> {
-  const payload = {
-    name: data.name?.toString().trim() ?? "",
-    email: data.email?.toString().trim() ?? "",
-    username: (data.username as string) ?? (data.email as string) ?? "",
-    role: String(data.role ?? "staff").toLowerCase(),
-    status: String(data.status ?? "active").toLowerCase(),
-    ...(data.phone != null && { phone: data.phone }),
-    ...(data.jobTitle != null && { jobTitle: data.jobTitle }),
-  };
   const res = await fetch(`${API_BASE()}/${id}`, {
     method: "PUT",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(data),
   });
   return readJsonOrThrow(res);
 }
@@ -153,12 +216,20 @@ export async function resetPassword(
   return readJsonOrThrow(res);
 }
 
-export async function getRoles(): Promise<unknown[]> {
+export async function getRoles(): Promise<RoleRecord[]> {
   const res = await fetch(API_ROLES(), { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error("Failed to fetch roles");
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  const list = (json.data as unknown[]) ?? (Array.isArray(json) ? json : []);
-  return Array.isArray(list) ? list : [];
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => {
+        const raw = item as Record<string, unknown>;
+        return {
+          id: Number(raw.id ?? 0),
+          name: String(raw.name ?? ""),
+          createdAt: String(raw.createdAt ?? ""),
+          updatedAt: String(raw.updatedAt ?? ""),
+        };
+      })
+    : [];
 }
 
 let departmentsCache: unknown[] | null = null;
@@ -169,19 +240,17 @@ export async function getDepartments(): Promise<unknown[]> {
   if (departmentsPromise) return departmentsPromise;
   departmentsPromise = (async () => {
     const res = await fetch(API_DEPARTMENTS(), { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Failed to fetch departments");
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const list = (json.data as unknown[]) ?? (Array.isArray(json) ? json : []);
-    departmentsCache = Array.isArray(list) ? list : [];
+    const json = (await readJsonOrThrow(res)) as { data?: unknown[] };
+    departmentsCache = Array.isArray(json.data) ? json.data : [];
     return departmentsCache;
   })();
   return departmentsPromise;
 }
 
 export async function getDepartmentById(departmentId: string): Promise<unknown> {
-  const id = departmentId ?? "1";
-  const res = await fetch(`${API_DEPARTMENTS()}/${id}`, { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error("Failed to fetch department");
-  const json = await res.json().catch(() => ({}));
-  return (json as { data?: unknown }).data ?? json;
+  const res = await fetch(`${API_DEPARTMENTS()}/${departmentId}`, {
+    headers: getAuthHeaders(),
+  });
+  const json = await readJsonOrThrow(res);
+  return unwrapApiData(json);
 }

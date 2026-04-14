@@ -30,6 +30,18 @@
       "expo-router",
       "expo-font",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Madhuban 360 to access your camera for attendance selfies."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Madhuban 360 to access your location for attendance verification."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#152B59",

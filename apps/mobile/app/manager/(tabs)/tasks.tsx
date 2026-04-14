@@ -1,5 +1,5 @@
-import { TasksScreen } from "../../../src/screens/tabs/TasksScreen";
+import { SupervisorTasksScreen } from "../../../src/screens/supervisor/SupervisorTasksScreen";
 
 export default function ManagerTasksRoute() {
-  return <TasksScreen />;
+  return <SupervisorTasksScreen />;
 }

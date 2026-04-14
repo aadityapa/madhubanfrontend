@@ -6,8 +6,12 @@ import "@madhuban/theme/tokens.css";
 import App from "./App.tsx";
 import "./index.css";
 
-/** Match FRONTEND_API_INTEGRATION.md: `VITE_API_URL` or `VITE_API_BASE_URL` = base without `/api`. */
-const viteApiRoot = [import.meta.env.VITE_API_URL, import.meta.env.VITE_API_BASE_URL]
+/** Prefer a web-admin-specific API root, then fall back to shared Vite vars. */
+const viteApiRoot = [
+  import.meta.env.VITE_WEB_ADMIN_API_URL,
+  import.meta.env.VITE_API_URL,
+  import.meta.env.VITE_API_BASE_URL,
+]
   .map((v) => (typeof v === "string" ? v.trim().replace(/\/+$/, "") : ""))
   .find((v) => v.length > 0);
 

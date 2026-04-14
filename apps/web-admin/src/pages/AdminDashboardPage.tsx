@@ -1,11 +1,4 @@
 import {
-  getActivity,
-  getAlerts,
-  getDashboardMetrics,
-  getRevenue,
-  getSalesPipeline,
-} from "@madhuban/api";
-import {
   AlertTriangle,
   ClipboardList,
   Plus,
@@ -14,7 +7,7 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useShellHeader } from "../context/ShellHeaderContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -190,6 +183,67 @@ function DashboardActions() {
   );
 }
 
+function DashboardSkeleton() {
+  return (
+    <div>
+      <SkeletonTheme />
+      <div style={cs.pageHeader}>
+        <div>
+          <SkeletonBlock width={220} height={28} />
+          <SkeletonBlock width={280} height={12} style={{ marginTop: 10 }} />
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <SkeletonBlock width={104} height={36} radius={10} />
+          <SkeletonBlock width={104} height={36} radius={10} />
+          <SkeletonBlock width={120} height={36} radius={10} />
+        </div>
+      </div>
+
+      <div style={cs.metricsGrid}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <SkeletonMetricCard key={index} />
+        ))}
+      </div>
+
+      <div style={cs.chartsRow}>
+        {Array.from({ length: 2 }, (_, index) => (
+          <div key={index} style={cs.card}>
+            <div style={cs.cardHeader}>
+              <SkeletonBlock width={160} height={16} />
+              <SkeletonBlock width={88} height={12} />
+            </div>
+            <SkeletonBlock width="100%" height={100} radius={12} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+              {Array.from({ length: 4 }, (__unused, labelIndex) => (
+                <SkeletonBlock key={labelIndex} width={48} height={10} />
+              ))}
+            </div>
+            <SkeletonBlock width="34%" height={24} style={{ marginTop: 18 }} />
+            <SkeletonBlock width="52%" height={12} style={{ marginTop: 10 }} />
+          </div>
+        ))}
+      </div>
+
+      <div style={cs.bottomGrid}>
+        <div style={cs.card}>
+          <div style={cs.cardHeader}>
+            <SkeletonBlock width={120} height={16} />
+            <SkeletonBlock width={64} height={12} />
+          </div>
+          <SkeletonCardList count={3} />
+        </div>
+        <div style={cs.card}>
+          <div style={cs.cardHeader}>
+            <SkeletonBlock width={128} height={16} />
+            <SkeletonBlock width={72} height={12} />
+          </div>
+          <SkeletonCardList count={4} lines={2} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export function AdminDashboardPage() {
   const [metrics, setMetrics] = useState<Metrics>(MOCK_METRICS);
@@ -229,105 +283,7 @@ export function AdminDashboardPage() {
       };
     }),
   );
-
   useShellHeader({ showSearch: true });
-
-  useEffect(() => {
-    void Promise.allSettled([
-      getDashboardMetrics(),
-      getSalesPipeline(),
-      getRevenue(),
-      getAlerts(),
-      getActivity(),
-    ]).then(([metricsRes, pipelineRes, revenueRes, alertsRes, activityRes]) => {
-      if (metricsRes.status === "fulfilled") {
-        const next = metricsRes.value as Record<string, unknown>;
-        setMetrics({
-          ...MOCK_METRICS,
-          ...next,
-          adminCount: Number(next.adminCount ?? next.admins ?? MOCK_METRICS.adminCount) || 0,
-          staffCount: Number(next.staffCount ?? next.staff ?? MOCK_METRICS.staffCount) || 0,
-        });
-      } else {
-        setMetrics(MOCK_METRICS);
-      }
-
-      if (pipelineRes.status === "fulfilled") {
-        const next = pipelineRes.value as {
-          data?: Array<{ value?: number }>;
-          summary?: { value?: number; trend?: number; label?: string };
-        };
-        const series = Array.isArray(next.data)
-          ? next.data.map((item) => Number(item.value ?? 0))
-          : [];
-        if (series.length) setPipelineData(series);
-        if (next.summary) {
-          setPipelineSummary({
-            value: Number(next.summary.value ?? 0),
-            trend: Number(next.summary.trend ?? 0),
-            label: String(next.summary.label ?? ""),
-          });
-        }
-      }
-
-      if (revenueRes.status === "fulfilled") {
-        const next = revenueRes.value as {
-          data?: Array<{ revenue?: number }>;
-          summary?: { value?: number; trend?: number; label?: string };
-        };
-        const series = Array.isArray(next.data)
-          ? next.data.map((item) => Number(item.revenue ?? 0))
-          : [];
-        if (series.length) setRevenueData(series);
-        if (next.summary) {
-          setRevenueSummary({
-            value: Number(next.summary.value ?? 0),
-            trend: Number(next.summary.trend ?? 0),
-            label: String(next.summary.label ?? ""),
-          });
-        }
-      }
-
-      if (alertsRes.status === "fulfilled" && Array.isArray(alertsRes.value)) {
-        setAlerts(
-          alertsRes.value.map((alert) => {
-            const item = alert as Record<string, unknown>;
-            return {
-              id: String(item.id ?? ""),
-              title: String(item.title ?? "Alert"),
-              reporter: String(item.reportedBy ?? ""),
-              time: String(item.timeAgo ?? ""),
-              level:
-                String(item.urgency ?? "MEDIUM").toUpperCase() === "URGENT"
-                  ? "URGENT"
-                  : "MEDIUM",
-              reportedBy: String(item.reportedBy ?? ""),
-              timeAgo: String(item.timeAgo ?? ""),
-              urgency:
-                String(item.urgency ?? "MEDIUM").toUpperCase() === "URGENT"
-                  ? "URGENT"
-                  : "MEDIUM",
-            };
-          }),
-        );
-      }
-
-      if (activityRes.status === "fulfilled" && Array.isArray(activityRes.value)) {
-        setActivity(
-          activityRes.value.map((entry, index) => {
-            const item = entry as Record<string, unknown>;
-            return {
-              id: String(item.id ?? index),
-              text: String(item.text ?? ""),
-              source: String(item.source ?? ""),
-              timeAgo: String(item.timeAgo ?? ""),
-              dot: index % 2 === 0 ? "#64748b" : "#94a3b8",
-            };
-          }),
-        );
-      }
-    });
-  }, []);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",

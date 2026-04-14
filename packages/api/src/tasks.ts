@@ -1,243 +1,380 @@
 import type { Task } from "@madhuban/types";
 import { getApiBaseUrl } from "./env";
-import { getAuthHeaders, readJsonOrThrow } from "./client";
+import { getAuthHeaders, readJsonOrThrow, unwrapApiData } from "./client";
 
-const API_BASE = () => `${getApiBaseUrl()}/api/tasks`;
+const API_TASKS = () => `${getApiBaseUrl()}/api/tasks`;
+const API_ASSIGNMENTS = () => `${getApiBaseUrl()}/api/staff-master-tasks`;
+const API_DAILY_TASKS = () => `${getApiBaseUrl()}/api/daily-staff-tasks`;
+const API_CRON = () => `${getApiBaseUrl()}/api/cron/daily-tasks`;
 
-/** `PATCH /api/tasks/:id/status` expects lowercase + aliases (see FRONTEND_API_INTEGRATION.md). */
-function mapAdminTaskStatusForApi(status: string): string {
-  const key = status.toUpperCase().replace(/\s+/g, "_");
-  const map: Record<string, string> = {
-    TO_DO: "pending",
-    IN_PROGRESS: "in_progress",
-    REVIEW: "pending_approval",
-    PENDING_APPROVAL: "pending_approval",
-    COMPLETED: "completed",
-    CANCELLED: "cancelled",
-    OVERDUE: "overdue",
-    PENDING: "pending",
-  };
-  if (map[key]) return map[key];
-  return status.toLowerCase().replace(/\s+/g, "_");
+export interface MasterTaskRecord {
+  id: number;
+  title: string;
+  description: string | null;
+  zoneId: number | null;
+  priority: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  materials: string[] | null;
+  createdByAdminId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByAdmin?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+  zone?: {
+    id: number;
+    zone: string;
+    propertyFloorId: number;
+  } | null;
 }
 
-function formatDueDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
+export interface StaffMasterTaskRecord {
+  id: number;
+  staffId: number;
+  masterTaskId: number;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  staff?: {
+    id: number;
+    name: string;
+    email: string;
+    supervisor?: {
+      id: number;
+      name: string;
+      email: string;
+    } | null;
+  } | null;
+  masterTask?: {
+    id: number;
+    title: string;
+  } | null;
 }
 
-function normalizeTask(t: Record<string, unknown>): Task {
-  const rawStatus = String(t.status ?? "pending").toLowerCase();
-  const statusMap: Record<string, string> = {
-    pending: "TO_DO",
-    in_progress: "IN_PROGRESS",
-    review: "REVIEW",
-    completed: "COMPLETED",
-    pending_approval: "REVIEW",
-  };
-  const status =
-    statusMap[rawStatus] ?? rawStatus.toUpperCase().replace(/\s/g, "_");
-
-  const assignee = t.assignee as { name?: string } | undefined;
-  const assigneeName = t.assigneeName as string | undefined;
-
-  return {
-    ...t,
-    _id: (t.id as string) ?? (t._id as string),
-    title:
-      (t.taskName as string) ??
-      (t.title as string) ??
-      (t.task_name as string) ??
-      "Untitled",
-    assignee: assignee ?? (assigneeName ? { name: assigneeName } : null),
-    assigneeId:
-      (t.assigneeId as string) ??
-      (assignee as { id?: string } | undefined)?.id ??
-      (assignee as { _id?: string } | undefined)?._id ??
-      null,
-    assignedBy:
-      (t.assignedBy as Task["assignee"]) ??
-      ((t.assignedByName as string)
-        ? { name: t.assignedByName as string }
-        : null),
-    status,
-    priority: String(t.priority ?? "normal").toUpperCase(),
-    dueDate: t.dueDate ? formatDueDate(String(t.dueDate)) : (t.dueDate as string),
-    completedAt: t.completedAt
-      ? formatDueDate(String(t.completedAt))
-      : (t.completedAt as string),
-    instructions: Array.isArray(t.instructions) ? t.instructions : [],
-    roomNumber: (t.roomNumber as string) ?? (t.room_number as string) ?? null,
-    locationFloor:
-      (t.locationFloor as string) ??
-      (t.location_floor as string) ??
-      (t.location as string) ??
-      null,
-    category:
-      (t.category as string) ??
-      (t.departmentName as string) ??
-      (t.department as string) ??
-      null,
-    departmentId: (t.departmentId as string) ?? null,
-    propertyId: (t.propertyId as string) ?? null,
-    propertyName: (t.propertyName as string) ?? null,
-    startDate: t.startDate ? formatDueDate(String(t.startDate)) : (t.startDate as string),
-    endDate: t.endDate ? formatDueDate(String(t.endDate)) : (t.endDate as string),
-    startTime: (t.startTime as string) ?? null,
-    endTime: (t.endTime as string) ?? null,
-    timeDuration: (t.timeDuration as string) ?? null,
-    frequency: (t.frequency as string) ?? null,
-    guestRequest: (t.guestRequest as string) ?? null,
-    attachments: Array.isArray(t.attachments) ? t.attachments : [],
-    createdAt: (t.createdAt as string) ?? null,
-    updatedAt: (t.updatedAt as string) ?? null,
+export interface DailyStaffTaskRecord {
+  id: number;
+  staffMasterTaskId: number;
+  staffId: number;
+  taskDate: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  staff?: StaffMasterTaskRecord["staff"];
+  staffMasterTask?: StaffMasterTaskRecord & {
+    masterTask?: MasterTaskRecord | null;
   };
 }
 
 export interface TaskFilters {
-  status?: string;
-  priority?: string;
-  assigneeId?: string;
-  dueDate?: string;
+  date?: string;
 }
 
-export async function getTasks(filters: TaskFilters = {}): Promise<Task[]> {
-  const params = new URLSearchParams();
-  if (filters.status) params.set("status", filters.status);
-  if (filters.priority) params.set("priority", filters.priority);
-  if (filters.assigneeId) params.set("assigneeId", filters.assigneeId);
-  if (filters.dueDate) params.set("dueDate", filters.dueDate);
-  const qs = params.toString();
-  const url = qs ? `${API_BASE()}?${qs}` : API_BASE();
-  const res = await fetch(url, { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error("Failed to fetch tasks");
-  const json = (await res.json()) as Record<string, unknown>;
-  const raw = json.data;
-  const tasks = Array.isArray(raw)
-    ? raw
-    : ((json.data as { tasks?: unknown[] })?.tasks ??
-        (json as { tasks?: unknown[] }).tasks ??
-        (Array.isArray(json) ? json : []));
-  return (tasks as Record<string, unknown>[]).map(normalizeTask);
+function mapMasterTask(raw: Record<string, unknown>): MasterTaskRecord {
+  return {
+    id: Number(raw.id ?? 0),
+    title: String(raw.title ?? ""),
+    description: raw.description == null ? null : String(raw.description),
+    zoneId: raw.zoneId == null ? null : Number(raw.zoneId),
+    priority: raw.priority == null ? null : String(raw.priority),
+    startTime: raw.startTime == null ? null : String(raw.startTime),
+    endTime: raw.endTime == null ? null : String(raw.endTime),
+    materials: Array.isArray(raw.materials)
+      ? raw.materials.map((item) => String(item))
+      : null,
+    createdByAdminId:
+      raw.createdByAdminId == null ? null : Number(raw.createdByAdminId),
+    createdAt: String(raw.createdAt ?? ""),
+    updatedAt: String(raw.updatedAt ?? ""),
+    createdByAdmin:
+      raw.createdByAdmin && typeof raw.createdByAdmin === "object"
+        ? {
+            id: Number((raw.createdByAdmin as Record<string, unknown>).id ?? 0),
+            name: String(
+              (raw.createdByAdmin as Record<string, unknown>).name ?? "",
+            ),
+            email: String(
+              (raw.createdByAdmin as Record<string, unknown>).email ?? "",
+            ),
+          }
+        : null,
+    zone:
+      raw.zone && typeof raw.zone === "object"
+        ? {
+            id: Number((raw.zone as Record<string, unknown>).id ?? 0),
+            zone: String((raw.zone as Record<string, unknown>).zone ?? ""),
+            propertyFloorId: Number(
+              (raw.zone as Record<string, unknown>).propertyFloorId ?? 0,
+            ),
+          }
+        : null,
+  };
+}
+
+function mapStaffAssignment(raw: Record<string, unknown>): StaffMasterTaskRecord {
+  return {
+    id: Number(raw.id ?? 0),
+    staffId: Number(raw.staffId ?? 0),
+    masterTaskId: Number(raw.masterTaskId ?? 0),
+    startDate: String(raw.startDate ?? ""),
+    endDate: String(raw.endDate ?? ""),
+    isActive: Boolean(raw.isActive),
+    createdAt: String(raw.createdAt ?? ""),
+    updatedAt: String(raw.updatedAt ?? ""),
+    staff:
+      raw.staff && typeof raw.staff === "object"
+        ? {
+            id: Number((raw.staff as Record<string, unknown>).id ?? 0),
+            name: String((raw.staff as Record<string, unknown>).name ?? ""),
+            email: String((raw.staff as Record<string, unknown>).email ?? ""),
+            supervisor:
+              (raw.staff as Record<string, unknown>).supervisor &&
+              typeof (raw.staff as Record<string, unknown>).supervisor === "object"
+                ? {
+                    id: Number(
+                      (
+                        (raw.staff as Record<string, unknown>)
+                          .supervisor as Record<string, unknown>
+                      ).id ?? 0,
+                    ),
+                    name: String(
+                      (
+                        (raw.staff as Record<string, unknown>)
+                          .supervisor as Record<string, unknown>
+                      ).name ?? "",
+                    ),
+                    email: String(
+                      (
+                        (raw.staff as Record<string, unknown>)
+                          .supervisor as Record<string, unknown>
+                      ).email ?? "",
+                    ),
+                  }
+                : null,
+          }
+        : null,
+    masterTask:
+      raw.masterTask && typeof raw.masterTask === "object"
+        ? {
+            id: Number((raw.masterTask as Record<string, unknown>).id ?? 0),
+            title: String((raw.masterTask as Record<string, unknown>).title ?? ""),
+          }
+        : null,
+  };
+}
+
+function mapDailyStaffTask(raw: Record<string, unknown>): DailyStaffTaskRecord {
+  return {
+    id: Number(raw.id ?? 0),
+    staffMasterTaskId: Number(raw.staffMasterTaskId ?? 0),
+    staffId: Number(raw.staffId ?? 0),
+    taskDate: String(raw.taskDate ?? ""),
+    status: String(raw.status ?? ""),
+    createdAt: String(raw.createdAt ?? ""),
+    updatedAt: String(raw.updatedAt ?? ""),
+    staff:
+      raw.staff && typeof raw.staff === "object"
+        ? mapStaffAssignment({
+            staff: raw.staff,
+            id: 0,
+            staffId: 0,
+            masterTaskId: 0,
+            startDate: "",
+            endDate: "",
+            isActive: false,
+            createdAt: "",
+            updatedAt: "",
+          }).staff
+        : null,
+    staffMasterTask:
+      raw.staffMasterTask && typeof raw.staffMasterTask === "object"
+        ? {
+            ...mapStaffAssignment(raw.staffMasterTask as Record<string, unknown>),
+            masterTask:
+              (raw.staffMasterTask as Record<string, unknown>).masterTask &&
+              typeof (raw.staffMasterTask as Record<string, unknown>).masterTask ===
+                "object"
+                ? mapMasterTask(
+                    (raw.staffMasterTask as Record<string, unknown>)
+                      .masterTask as Record<string, unknown>,
+                  )
+                : null,
+          }
+        : undefined,
+  };
+}
+
+function toLegacyTask(task: MasterTaskRecord): Task {
+  return {
+    _id: String(task.id),
+    id: String(task.id),
+    title: task.title,
+    description: task.description ?? "",
+    status: "TO_DO",
+    priority: task.priority ?? undefined,
+    assignee: null,
+    assigneeId: null,
+    locationFloor: task.zone?.zone ?? null,
+    propertyName: null,
+    roomNumber: null,
+    category: null,
+    dueDate: undefined,
+    startTime: task.startTime ?? undefined,
+    endTime: task.endTime ?? undefined,
+  };
+}
+
+export async function getTasks(): Promise<Task[]> {
+  const res = await fetch(API_TASKS(), { headers: getAuthHeaders() });
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  const tasks = Array.isArray(payload)
+    ? payload.map((item) => mapMasterTask(item as Record<string, unknown>))
+    : [];
+  return tasks.map(toLegacyTask);
+}
+
+export async function getMasterTasks(): Promise<MasterTaskRecord[]> {
+  const res = await fetch(API_TASKS(), { headers: getAuthHeaders() });
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => mapMasterTask(item as Record<string, unknown>))
+    : [];
 }
 
 export async function getTaskById(id: string): Promise<Task> {
-  const res = await fetch(`${API_BASE()}/${id}`, {
-    headers: getAuthHeaders(),
-  });
-  if (!res.ok) throw new Error("Failed to fetch task");
-  const json = (await res.json()) as Record<string, unknown>;
-  const task =
-    (json.data as { task?: Record<string, unknown> })?.task ??
-    (json.data as Record<string, unknown>) ??
-    json;
-  return normalizeTask(task as Record<string, unknown>);
+  const task = await getMasterTaskById(id);
+  return toLegacyTask(task);
+}
+
+export async function getMasterTaskById(
+  id: string | number,
+): Promise<MasterTaskRecord> {
+  const tasks = await getMasterTasks();
+  const match = tasks.find((task) => String(task.id) === String(id));
+  if (!match) {
+    throw new Error("Task not found.");
+  }
+  return match;
 }
 
 export async function createTask(data: unknown): Promise<unknown> {
-  const headers = getAuthHeaders();
-
-  if (data instanceof FormData) {
-    const res = await fetch(API_BASE(), {
-      method: "POST",
-      headers,
-      body: data,
-    });
-    return readJsonOrThrow(res);
-  }
-
-  const d = data as Record<string, unknown>;
-  const apiData = {
-    taskName: d.title ?? d.taskName,
-    departmentId: d.departmentId,
-    description: d.description ?? "",
-    assigneeId: d.assigneeId,
-    priority: String(d.priority ?? "NORMAL").toUpperCase(),
-    propertyId: d.propertyId,
-    startDate: d.startDate,
-    endDate: d.endDate,
-    startTime: d.startTime,
-    endTime: d.endTime,
-    timeDuration: d.timeDuration,
-    frequency: d.frequency || undefined,
-    floorId: d.floorId,
-    zoneId: d.zoneId,
-    instructions: Array.isArray(d.instructions) ? d.instructions : [],
-    attachments: Array.isArray(d.attachments) ? d.attachments : [],
+  const input = data as Record<string, unknown>;
+  const payload = {
+    title: String(input.title ?? ""),
+    description:
+      input.description == null ? undefined : String(input.description),
+    zoneId: input.zoneId == null || input.zoneId === ""
+      ? undefined
+      : Number(input.zoneId),
+    priority:
+      input.priority == null || input.priority === ""
+        ? undefined
+        : String(input.priority).toUpperCase(),
+    startTime:
+      input.startTime == null || input.startTime === ""
+        ? undefined
+        : String(input.startTime),
+    endTime:
+      input.endTime == null || input.endTime === ""
+        ? undefined
+        : String(input.endTime),
+    materials: Array.isArray(input.materials)
+      ? input.materials.map((item) => String(item))
+      : undefined,
   };
-
-  const res = await fetch(API_BASE(), {
+  const res = await fetch(API_TASKS(), {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(apiData),
+    body: JSON.stringify(payload),
   });
   return readJsonOrThrow(res);
 }
 
-export async function updateTask(id: string, data: Record<string, unknown>): Promise<unknown> {
-  const apiData = {
-    taskName: data.title ?? data.taskName,
-    departmentId: data.departmentId,
-    description: data.description,
-    assigneeId: data.assigneeId,
-    priority: data.priority?.toString().toUpperCase() || "NORMAL",
-    propertyId: data.propertyId,
-    dueDate: data.dueDate,
-    startDate: data.startDate,
-    endDate: data.endDate,
-    startTime: data.startTime,
-    endTime: data.endTime,
-    timeDuration: data.timeDuration,
-    frequency: data.frequency,
-    status: mapAdminTaskStatusForApi(String(data.status ?? "pending")),
-    roomNumber: data.roomNumber,
-    locationFloor: data.locationFloor,
-    instructions: Array.isArray(data.instructions) ? data.instructions : [],
-    guestRequest: data.guestRequest,
-    attachments: Array.isArray(data.attachments) ? data.attachments : [],
+export async function updateTask(): Promise<unknown> {
+  throw new Error("Master task update is not documented by the admin API.");
+}
+
+export async function updateTaskStatus(): Promise<unknown> {
+  throw new Error("Master task status update is not documented by the admin API.");
+}
+
+export async function deleteTask(): Promise<unknown> {
+  throw new Error("Master task delete is not documented by the admin API.");
+}
+
+export async function approveTask(): Promise<unknown> {
+  throw new Error("Task approval is not documented by the admin API.");
+}
+
+export async function rejectTask(): Promise<unknown> {
+  throw new Error("Task approval is not documented by the admin API.");
+}
+
+export async function getStaffMasterTasks(): Promise<StaffMasterTaskRecord[]> {
+  const res = await fetch(API_ASSIGNMENTS(), { headers: getAuthHeaders() });
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => mapStaffAssignment(item as Record<string, unknown>))
+    : [];
+}
+
+export async function assignStaffMasterTask(data: {
+  staffId: number;
+  masterTaskId: number;
+  startDate: string;
+  endDate: string;
+}): Promise<{ message?: string; data: StaffMasterTaskRecord }> {
+  const res = await fetch(API_ASSIGNMENTS(), {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  const payload = (await readJsonOrThrow(res)) as {
+    message?: string;
+    data: Record<string, unknown>;
   };
-
-  const res = await fetch(`${API_BASE()}/${id}`, {
-    method: "PUT",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(apiData),
-  });
-  return readJsonOrThrow(res);
+  return {
+    message: payload.message,
+    data: mapStaffAssignment(payload.data),
+  };
 }
 
-export async function updateTaskStatus(id: string, status: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}/${id}/status`, {
-    method: "PATCH",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ status: mapAdminTaskStatusForApi(status) }),
-  });
-  return readJsonOrThrow(res);
-}
-
-export async function deleteTask(id: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}/${id}`, {
-    method: "DELETE",
+export async function runDailyTasksCron(): Promise<{
+  message?: string;
+  created: number;
+  skipped: number;
+}> {
+  const res = await fetch(API_CRON(), {
+    method: "POST",
     headers: getAuthHeaders(),
   });
-  return readJsonOrThrow(res);
+  const payload = (await readJsonOrThrow(res)) as Record<string, unknown>;
+  return {
+    message: payload.message == null ? undefined : String(payload.message),
+    created: Number(payload.created ?? 0),
+    skipped: Number(payload.skipped ?? 0),
+  };
 }
 
-export async function approveTask(taskId: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}/${taskId}/approve`, {
-    method: "PATCH",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ approved: true }),
-  });
-  return readJsonOrThrow(res);
+export async function getDailyStaffTasks(
+  filters: TaskFilters = {},
+): Promise<DailyStaffTaskRecord[]> {
+  const search = new URLSearchParams();
+  if (filters.date) search.set("date", filters.date);
+  const res = await fetch(
+    `${API_DAILY_TASKS()}${search.toString() ? `?${search.toString()}` : ""}`,
+    { headers: getAuthHeaders() },
+  );
+  const payload = unwrapApiData<unknown[]>(await readJsonOrThrow(res));
+  return Array.isArray(payload)
+    ? payload.map((item) => mapDailyStaffTask(item as Record<string, unknown>))
+    : [];
 }
 
-export async function rejectTask(taskId: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE()}/${taskId}/approve`, {
-    method: "PATCH",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ approved: false }),
-  });
-  return readJsonOrThrow(res);
+export function normalizeTask(t: Record<string, unknown>): Task {
+  return toLegacyTask(mapMasterTask(t));
 }
-
-export { normalizeTask };

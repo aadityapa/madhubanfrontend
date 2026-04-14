@@ -34,6 +34,11 @@ import {
   getReports,
   getTasks,
 } from "@madhuban/api";
+import { SkeletonBlock, SkeletonCardList, SkeletonTheme } from "../components/Skeleton";
+import {
+  getRequiredError,
+  validationStyles,
+} from "../utils/validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PropertyType = "Commercial" | "Residential" | "Industrial";
@@ -192,19 +197,30 @@ function AddPropertyModal({
   onAdded: () => void;
 }) {
   const [form, setForm] = useState<AddPropForm>(EMPTY_PROP);
+  const [errors, setErrors] = useState<Partial<Record<keyof AddPropForm, string>>>({});
   const { showToast } = useToast();
-  function set(k: keyof AddPropForm, v: string) { setForm(f => ({ ...f, [k]: v })); }
+  function set(k: keyof AddPropForm, v: string) {
+    setForm(f => ({ ...f, [k]: v }));
+    setErrors((current) => ({ ...current, [k]: undefined }));
+  }
+  function validate() {
+    const nextErrors: Partial<Record<keyof AddPropForm, string>> = {
+      name: getRequiredError(form.name, "Please enter the property name.") ?? undefined,
+      propId: getRequiredError(form.propId, "Please enter the property ID.") ?? undefined,
+      type: getRequiredError(form.type, "Please select the property type.") ?? undefined,
+      address: getRequiredError(form.address, "Please enter the property address.") ?? undefined,
+      city: getRequiredError(form.city, "Please enter the city.") ?? undefined,
+      state: getRequiredError(form.state, "Please enter the state or province.") ?? undefined,
+      contact: getRequiredError(form.contact, "Please enter the primary contact.") ?? undefined,
+    };
+    setErrors(nextErrors);
+    return Object.values(nextErrors).every((value) => !value);
+  }
   async function handleAdd() {
-    if (!form.name) return;
+    if (!validate()) return;
     try {
       await createProperty({
-        propertyName: form.name,
-        propertyType: form.type || undefined,
-        location: [form.city, form.state].filter(Boolean).join(", "),
-        address: form.address,
-        city: form.city,
-        stateProvince: form.state,
-        zip: form.zip,
+        propertyName: form.name.trim(),
       });
       showToast("success", "Property Added!", `"${form.name}" has been registered successfully.`);
       onClose();
@@ -228,11 +244,11 @@ function AddPropertyModal({
           {/* Property Information */}
           <Section icon={<Building2 size={14}/>} label="Property Information">
             <div style={ap.row2}>
-              <Field label="Property Name"><input style={ap.input} placeholder="e.g. Skyline Heights" value={form.name} onChange={e=>set("name",e.target.value)}/></Field>
-              <Field label="Property ID"><input style={ap.input} placeholder="PROP-888" value={form.propId} onChange={e=>set("propId",e.target.value)}/></Field>
+              <Field label="Property Name" error={errors.name}><input style={{ ...ap.input, ...(errors.name ? validationStyles.inputErrorBorder : null) }} placeholder="e.g. Skyline Heights" value={form.name} onChange={e=>set("name",e.target.value)}/></Field>
+              <Field label="Property ID" error={errors.propId}><input style={{ ...ap.input, ...(errors.propId ? validationStyles.inputErrorBorder : null) }} placeholder="PROP-888" value={form.propId} onChange={e=>set("propId",e.target.value)}/></Field>
             </div>
-            <Field label="Property Type">
-              <select style={ap.input} value={form.type} onChange={e=>set("type",e.target.value)}>
+            <Field label="Property Type" error={errors.type}>
+              <select style={{ ...ap.input, ...(errors.type ? validationStyles.inputErrorBorder : null) }} value={form.type} onChange={e=>set("type",e.target.value)}>
                 <option value="">Select type</option>
                 {(["Commercial","Residential","Industrial"] as PropertyType[]).map(t=><option key={t} value={t}>{t}</option>)}
               </select>
@@ -241,10 +257,10 @@ function AddPropertyModal({
 
           {/* Location Details */}
           <Section icon={<Search size={14}/>} label="Location Details">
-            <Field label="Full Address"><input style={ap.input} placeholder="Street address, apartment, suite..." value={form.address} onChange={e=>set("address",e.target.value)}/></Field>
+            <Field label="Full Address" error={errors.address}><input style={{ ...ap.input, ...(errors.address ? validationStyles.inputErrorBorder : null) }} placeholder="Street address, apartment, suite..." value={form.address} onChange={e=>set("address",e.target.value)}/></Field>
             <div style={ap.row3}>
-              <Field label="City"><input style={ap.input} placeholder="City name" value={form.city} onChange={e=>set("city",e.target.value)}/></Field>
-              <Field label="State/Province"><input style={ap.input} placeholder="State" value={form.state} onChange={e=>set("state",e.target.value)}/></Field>
+              <Field label="City" error={errors.city}><input style={{ ...ap.input, ...(errors.city ? validationStyles.inputErrorBorder : null) }} placeholder="City name" value={form.city} onChange={e=>set("city",e.target.value)}/></Field>
+              <Field label="State/Province" error={errors.state}><input style={{ ...ap.input, ...(errors.state ? validationStyles.inputErrorBorder : null) }} placeholder="State" value={form.state} onChange={e=>set("state",e.target.value)}/></Field>
               <Field label="Zip Code"><input style={ap.input} placeholder="Zip" value={form.zip} onChange={e=>set("zip",e.target.value)}/></Field>
             </div>
           </Section>
@@ -256,7 +272,7 @@ function AddPropertyModal({
               <Field label="Units Sold"><input style={ap.input} placeholder="e.g. 120" value={form.unitsSold} onChange={e=>set("unitsSold",e.target.value)}/></Field>
               <Field label="Units Unsold"><input style={ap.input} placeholder="e.g. 120" value={form.unitsUnsold} onChange={e=>set("unitsUnsold",e.target.value)}/></Field>
             </div>
-            <Field label="Primary Contact Person"><input style={ap.input} placeholder="Manager name / Contact Number" value={form.contact} onChange={e=>set("contact",e.target.value)}/></Field>
+            <Field label="Primary Contact Person" error={errors.contact}><input style={{ ...ap.input, ...(errors.contact ? validationStyles.inputErrorBorder : null) }} placeholder="Manager name / Contact Number" value={form.contact} onChange={e=>set("contact",e.target.value)}/></Field>
           </Section>
         </div>
         <div style={ap.footer}>
@@ -277,11 +293,46 @@ function Section({ icon, label, children }: { icon: React.ReactNode; label: stri
     </div>
   );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
       <label style={{ fontSize:12.5, fontWeight:600, color:"var(--c-text-muted)" }}>{label}</label>
       {children}
+      {error ? <div style={validationStyles.errorText}>{error}</div> : null}
+    </div>
+  );
+}
+
+function PropertyManagementSkeleton() {
+  return (
+    <div>
+      <SkeletonTheme />
+      <div style={pg.pageHeader}>
+        <div>
+          <SkeletonBlock width={220} height={28} />
+          <SkeletonBlock width={320} height={12} style={{ marginTop: 10 }} />
+        </div>
+        <SkeletonBlock width={126} height={38} radius={10} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} style={sh.statMini}>
+            <SkeletonBlock width="48%" height={12} />
+            <SkeletonBlock width="36%" height={26} style={{ marginTop: 12 }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginBottom: 24 }}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} style={{ background: "var(--c-card)", border: "1px solid var(--c-card-border)", borderRadius: 12, padding: 18 }}>
+            <SkeletonBlock width="42%" height={12} />
+            <SkeletonBlock width="70%" height={20} style={{ marginTop: 12 }} />
+            <SkeletonBlock width="88%" height={12} style={{ marginTop: 12 }} />
+            <SkeletonBlock width="100%" height={72} radius={10} style={{ marginTop: 16 }} />
+          </div>
+        ))}
+      </div>
+      <SkeletonCardList count={3} />
     </div>
   );
 }
@@ -683,6 +734,7 @@ export function PropertyManagementPage() {
   const [assets, setAssets] = useState<Asset[]>(ASSETS);
   const [assetSummary, setAssetSummary] = useState<AssetSummary | null>(null);
   const [reports, setReports] = useState(REPORTS);
+  const [loading, setLoading] = useState(true);
 
   useShellHeader({ showSearch: true });
 
@@ -778,10 +830,11 @@ export function PropertyManagementPage() {
 
   async function refreshAll() {
     try {
+      setLoading(true);
       const [propsRaw, propSum, taskRaw, assetsRaw, assetSum, reportsRaw] = await Promise.all([
-        getProperties({}),
+        getProperties(),
         getPropertySummary().catch(() => null),
-        getTasks({}).catch(() => []),
+        getTasks().catch(() => []),
         getAssets({}).catch(() => ({ list: [] })),
         getAssetSummary().catch(() => null),
         getReports({}).catch(() => ({ list: [] })),
@@ -791,13 +844,24 @@ export function PropertyManagementPage() {
         setProperties(propsRaw.map((p, idx) => normalizeProperty(p as Record<string, unknown>, idx)));
       }
 
-      if (propSum && typeof propSum === "object") {
-        const d = (propSum as { data?: Record<string, unknown> }).data ?? (propSum as Record<string, unknown>);
+      if (Array.isArray(propSum)) {
+        const d = propSum as Array<{
+          floorCount?: number;
+          zoneCount?: number;
+          departmentCount?: number;
+        }>;
         setPropertySummary({
-          total: Number(d.total ?? 0) || 0,
-          activeAmc: Number(d.activeAmcCount ?? d.activeAmc ?? 0) || 0,
-          expiringAmc: Number(d.expiringAmcCount ?? d.expiringAmc ?? 0) || 0,
-          occupancyPercent: Number(d.occupancy ?? d.occupancyPercent ?? 0) || 0,
+          total: d.length,
+          activeAmc: d.length,
+          expiringAmc: 0,
+          occupancyPercent:
+            d.length > 0
+              ? Math.round(
+                  (d.filter((item) => Number(item.floorCount ?? 0) > 0).length /
+                    d.length) *
+                    100,
+                )
+              : 0,
         });
       }
 
@@ -832,6 +896,8 @@ export function PropertyManagementPage() {
       }
     } catch (e) {
       showToast("error", "Failed to sync properties data", e instanceof Error ? e.message : "Please try again.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -839,6 +905,10 @@ export function PropertyManagementPage() {
     void refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (loading) {
+    return <PropertyManagementSkeleton />;
+  }
 
   return (
     <div>

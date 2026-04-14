@@ -26,6 +26,10 @@ import { useShellHeader } from "../context/ShellHeaderContext";
 import { useToast } from "../context/ToastContext";
 import { createUser, deleteUser, getUsers, updateUser } from "@madhuban/api";
 import { useEffect } from "react";
+import {
+  SkeletonTableRows,
+  SkeletonTheme,
+} from "../components/Skeleton";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const INITIAL_USERS: User[] = [
@@ -84,14 +88,14 @@ type ModalState =
 const PAGE_SIZE = 5;
 
 export function UserManagementPage() {
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<User[]>([]);
   const [roleFilter, setRoleFilter] = useState<UserRole | "">("");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "">("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const { showToast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const AVATAR_COLORS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#8b5cf6","#ec4899","#2563eb","#64748b"];
 
@@ -127,7 +131,8 @@ export function UserManagementPage() {
   async function refreshUsers() {
     try {
       setLoading(true);
-      const list = (await getUsers()) as Record<string, unknown>[];
+      const response = await getUsers({ page: 1, limit: 100 });
+      const list = response.data as Record<string, unknown>[];
       if (!Array.isArray(list) || list.length === 0) return;
       setUsers(list.map(toUser));
     } catch (e) {
@@ -214,6 +219,7 @@ export function UserManagementPage() {
 
   return (
     <div>
+      <SkeletonTheme />
       <div style={ts.card}>
         {/* Toolbar */}
         <div style={ts.toolbar}>
@@ -261,6 +267,7 @@ export function UserManagementPage() {
             </tr>
           </thead>
           <tbody>
+            {loading ? <SkeletonTableRows rows={PAGE_SIZE} cols={5} /> : null}
             {paged.map((user) => (
               <tr key={user.id} style={ts.tr}>
                 {/* Profile */}
@@ -302,10 +309,10 @@ export function UserManagementPage() {
                 </td>
               </tr>
             ))}
-            {paged.length === 0 && (
+            {!loading && paged.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", padding: "36px 16px", color: "var(--c-text-faint)", fontSize: 13 }}>
-                  {loading ? "Loading users…" : "No users match the current filters."}
+                  No users match the current filters.
                 </td>
               </tr>
             )}

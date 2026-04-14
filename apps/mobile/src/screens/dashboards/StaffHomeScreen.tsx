@@ -1,15 +1,10 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { getMyTasks } from "@madhuban/api";
-import { colors } from "@madhuban/theme";
+import { getStaffAttendance, getStaffDashboard } from "@madhuban/api";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { AttendanceActionCard } from "../../components/AttendanceActionCard";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { SkeletonBlock } from "../../components/SkeletonBlock";
 import { useAuth } from "../../context/AuthContext";
 import { RolePageLayout, formatRoleLabel } from "../../layouts/RolePageLayout";
 
@@ -30,18 +25,66 @@ function MetricCard({
   );
 }
 
+function formatCheckIn(value: string | null | undefined) {
+  if (!value) return "Not checked in";
+  return `Active since ${new Date(value).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+}
+
+function formatDateLabel(value: string | null | undefined) {
+  if (!value) return "26 Mar 2026";
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function StaffHomeScreen() {
   const { user, role } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [count, setCount] = useState<number | null>(null);
+  const [dashboard, setDashboard] = useState<{
+    assigned: number;
+    completed: number;
+    remaining: number;
+    criticalPending: number;
+    shift: string;
+  } | null>(null);
+  const [attendance, setAttendance] = useState<{
+    phase: string;
+    checkInAt: string | null;
+    workDate: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const tasks = await getMyTasks();
-      setCount(tasks.length);
+      const [dashboardData, attendanceData] = await Promise.all([
+        getStaffDashboard(),
+        getStaffAttendance().catch(() => null),
+      ]);
+      setDashboard({
+        assigned: dashboardData.counts.assigned,
+        completed: dashboardData.counts.completed,
+        remaining: dashboardData.counts.remaining,
+        criticalPending: dashboardData.actionNeeded.criticalPending,
+        shift: dashboardData.shift,
+      });
+      if (attendanceData) {
+        setAttendance({
+          phase: attendanceData.phase,
+          checkInAt: attendanceData.checkInAt,
+          workDate: attendanceData.workDate,
+        });
+      } else {
+        setAttendance(null);
+      }
     } catch {
-      setCount(null);
+      setDashboard(null);
+      setAttendance(null);
     } finally {
       setLoading(false);
     }
@@ -53,13 +96,15 @@ export function StaffHomeScreen() {
 
   const roleLabel = formatRoleLabel(String(role ?? user?.role));
   const firstName = user?.name?.split(" ")[0] ?? "Rahul";
-  const assigned = count ?? 24;
-  const completed = count == null ? 18 : Math.max(0, Math.round(count * 0.7));
-  const remaining = Math.max(0, assigned - completed);
+  const assigned = dashboard?.assigned ?? 24;
+  const completed = dashboard?.completed ?? 18;
+  const remaining = dashboard?.remaining ?? Math.max(0, assigned - completed);
+  const criticalPending = dashboard?.criticalPending ?? 3;
+  const shiftLabel = dashboard?.shift ? `Shift · ${dashboard.shift}` : "Shift · Morning";
 
   return (
     <RolePageLayout
-      eyebrow="Shift · Morning"
+      eyebrow={shiftLabel}
       title={`Hi, ${firstName}!`}
       subtitle="Madhuban Groups"
       meta={roleLabel}
@@ -70,13 +115,13 @@ export function StaffHomeScreen() {
             <Text style={styles.headerLabel}>Check-in Status</Text>
             <View style={styles.statusRow}>
               <View style={styles.statusDot} />
-              <Text style={styles.headerValue}>Active since 07:59 AM</Text>
+              <Text style={styles.headerValue}>{formatCheckIn(attendance?.checkInAt)}</Text>
             </View>
           </View>
           <View style={styles.headerDivider} />
           <View>
             <Text style={styles.headerLabel}>Date</Text>
-            <Text style={styles.headerValue}>26 Mar 2026</Text>
+            <Text style={styles.headerValue}>{formatDateLabel(attendance?.workDate)}</Text>
           </View>
         </View>
       }
@@ -94,8 +139,13 @@ export function StaffHomeScreen() {
             <Text style={styles.panelTitle}>Today's Shift Progress</Text>
           </View>
           {loading ? (
-            <View style={styles.loaderWrap}>
-              <ActivityIndicator color={colors.primary} />
+            <View style={styles.metricGrid}>
+              {[0, 1, 2].map((item) => (
+                <View key={item} style={styles.metricCard}>
+                  <SkeletonBlock style={{ height: 26, width: 34, borderRadius: 8 }} />
+                  <SkeletonBlock style={{ height: 12, width: 60, borderRadius: 6 }} />
+                </View>
+              ))}
             </View>
           ) : (
             <View style={styles.metricGrid}>
@@ -112,7 +162,7 @@ export function StaffHomeScreen() {
           </View>
           <View style={styles.bannerBody}>
             <Text style={styles.bannerEyebrow}>Action Needed</Text>
-            <Text style={styles.bannerTitle}>3 critical tasks pending</Text>
+            <Text style={styles.bannerTitle}>{criticalPending} critical tasks pending</Text>
             <Text style={styles.bannerText}>Requires immediate attention on this shift.</Text>
           </View>
         </View>
@@ -123,8 +173,8 @@ export function StaffHomeScreen() {
           </View>
           <View style={styles.bannerBody}>
             <Text style={styles.bannerEyebrow}>Task Update</Text>
-            <Text style={styles.bannerTitle}>1 task reassigned</Text>
-            <Text style={styles.bannerText}>Clear Trash Bins · Cafeteria</Text>
+            <Text style={styles.bannerTitle}>Current shift loaded</Text>
+            <Text style={styles.bannerText}>{remaining} tasks remain in today's workload.</Text>
           </View>
         </View>
 
@@ -133,11 +183,22 @@ export function StaffHomeScreen() {
             <Feather name="check-square" size={15} color="#5E7393" />
             <Text style={styles.panelTitle}>Approval Status</Text>
           </View>
-          <View style={styles.metricGrid}>
-            <MetricCard label="Submitted" value="4" tint="#2563EB" />
-            <MetricCard label="Sent Back" value="2" tint="#D97706" />
-            <MetricCard label="Sup. Reject" value="1" tint="#E11D48" />
-          </View>
+          {loading ? (
+            <View style={styles.metricGrid}>
+              {[0, 1, 2].map((item) => (
+                <View key={item} style={styles.metricCard}>
+                  <SkeletonBlock style={{ height: 26, width: 34, borderRadius: 8 }} />
+                  <SkeletonBlock style={{ height: 12, width: 60, borderRadius: 6 }} />
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.metricGrid}>
+              <MetricCard label="Submitted" value={String(completed)} tint="#2563EB" />
+              <MetricCard label="Sent Back" value="0" tint="#D97706" />
+              <MetricCard label="Sup. Reject" value="0" tint="#E11D48" />
+            </View>
+          )}
         </View>
       </RefreshableScrollView>
     </RolePageLayout>
@@ -199,11 +260,6 @@ const styles = StyleSheet.create({
     color: "#162236",
     fontSize: 15,
     fontWeight: "700",
-  },
-  loaderWrap: {
-    minHeight: 96,
-    alignItems: "center",
-    justifyContent: "center",
   },
   metricGrid: {
     flexDirection: "row",

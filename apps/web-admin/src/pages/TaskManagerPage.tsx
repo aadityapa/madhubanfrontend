@@ -24,6 +24,8 @@ import {
   updateTask,
   updateTaskStatus,
 } from "@madhuban/api";
+import { SkeletonBlock, SkeletonCardList, SkeletonTheme } from "../components/Skeleton";
+import { getRequiredError, validationStyles } from "../utils/validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TaskStatus = "todo" | "inprogress" | "review" | "completed";
@@ -146,6 +148,15 @@ const PRIORITY_STYLE: Record<TaskPriority, { bg: string; color: string }> = {
   NORMAL:          { bg: "#f8fafc", color: "#64748b" },
 };
 
+function normalizePriority(raw: unknown): TaskPriority {
+  const value = String(raw ?? "NORMAL").trim().toUpperCase().replace(/\s+/g, "_");
+  if (value === "HIGH" || value === "HIGH_PRIORITY") return "HIGH PRIORITY";
+  if (value === "URGENT" || value === "CRITICAL" || value === "EMERGENCY") return "URGENT";
+  if (value === "LOW") return "LOW";
+  if (value === "MEDIUM") return "MEDIUM";
+  return "NORMAL";
+}
+
 // ─── Meta badge renderer ──────────────────────────────────────────────────────
 function MetaBadge({ meta, type }: { meta: string; type?: MetaType }) {
   if (!meta) return null;
@@ -169,7 +180,7 @@ function MetaBadge({ meta, type }: { meta: string; type?: MetaType }) {
 
 // ─── Task card ────────────────────────────────────────────────────────────────
 function TaskCard({ task, onView }: { task: Task; onView: (t: Task) => void }) {
-  const ps = PRIORITY_STYLE[task.priority];
+  const ps = PRIORITY_STYLE[task.priority] ?? PRIORITY_STYLE.NORMAL;
   return (
     <div style={tc.card}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
@@ -206,7 +217,7 @@ function TaskDetailModal({
   onEdit: () => void;
   onComplete: () => void;
 }) {
-  const ps = PRIORITY_STYLE[task.priority];
+  const ps = PRIORITY_STYLE[task.priority] ?? PRIORITY_STYLE.NORMAL;
   return (
     <div style={md.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={md.panel}>
@@ -378,10 +389,28 @@ function CreateTaskModal({
   onSave: (f: TaskForm) => void;
 }) {
   const [form, setForm] = useState<TaskForm>(initial ?? EMPTY_FORM);
+  const [errors, setErrors] = useState<Partial<Record<keyof TaskForm, string>>>({});
   function set<K extends keyof TaskForm>(k: K, v: TaskForm[K]) { setForm(f => ({ ...f, [k]: v })); }
+  function setField<K extends keyof TaskForm>(k: K, v: TaskForm[K]) {
+    set(k, v);
+    setErrors((current) => ({ ...current, [k]: undefined }));
+  }
+
+  function validate(next: TaskForm) {
+    const nextErrors: Partial<Record<keyof TaskForm, string>> = {
+      title: getRequiredError(next.title, "Please enter the task name.") ?? undefined,
+      description: getRequiredError(next.description, "Please enter the task description.") ?? undefined,
+      assigneeId: getRequiredError(next.assigneeId, "Please select an assignee.") ?? undefined,
+      area: getRequiredError(next.area, "Please select the area.") ?? undefined,
+      frequency: getRequiredError(next.frequency, "Please select the frequency.") ?? undefined,
+    };
+    setErrors(nextErrors);
+    return Object.values(nextErrors).every((value) => !value);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!validate(form)) return;
     onSave(form);
     onClose();
   }
@@ -402,32 +431,31 @@ function CreateTaskModal({
         <form onSubmit={handleSubmit} style={cf.form}>
           {/* Basic Info */}
           <SectionHdr label="BASIC INFO" />
-          <CFField label="Task Name">
-            <input style={cf.input} placeholder="e.g. Door Cleaning" value={form.title} onChange={e => set("title", e.target.value)} required />
+          <CFField label="Task Name" error={errors.title}>
+            <input style={{ ...cf.input, ...(errors.title ? validationStyles.inputErrorBorder : null) }} placeholder="e.g. Door Cleaning" value={form.title} onChange={e => setField("title", e.target.value)} />
           </CFField>
           <CFField label="Category">
-            <select style={cf.input} value={form.category} onChange={e => set("category", e.target.value)}>
+            <select style={cf.input} value={form.category} onChange={e => setField("category", e.target.value)}>
               {["Maintenance", "Cleaning", "Inspection", "Security", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </CFField>
-          <CFField label="Description">
-            <textarea style={{ ...cf.input, height: 72, resize: "vertical" as const }} placeholder="Describe the work to be performed..." value={form.description} onChange={e => set("description", e.target.value)} />
+          <CFField label="Description" error={errors.description}>
+            <textarea style={{ ...cf.input, ...(errors.description ? validationStyles.inputErrorBorder : null), height: 72, resize: "vertical" as const }} placeholder="Describe the work to be performed..." value={form.description} onChange={e => setField("description", e.target.value)} />
           </CFField>
 
           {/* Assignment & Priority */}
           <SectionHdr label="ASSIGNMENT & PRIORITY" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <CFField label="Assignee">
+            <CFField label="Assignee" error={errors.assigneeId}>
               <select
-                style={cf.input}
+                style={{ ...cf.input, ...(errors.assigneeId ? validationStyles.inputErrorBorder : null) }}
                 value={form.assigneeId}
                 onChange={(e) => {
                   const id = e.target.value;
                   const found = assignees.find((a) => a.id === id);
-                  set("assigneeId", id);
-                  set("assigneeName", found?.name ?? "");
+                  setField("assigneeId", id);
+                  setField("assigneeName", found?.name ?? "");
                 }}
-                required
               >
                 <option value="">Select staff member</option>
                 {assignees.map((a) => (
@@ -440,7 +468,7 @@ function CreateTaskModal({
             <CFField label="Priority">
               <div style={{ display: "flex", gap: 6 }}>
                 {pBtns.map(p => (
-                  <button key={p.label} type="button" onClick={() => set("priority", p.label)}
+                  <button key={p.label} type="button" onClick={() => setField("priority", p.label)}
                     style={{ flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 700, border: `1.5px solid ${form.priority === p.label ? p.color : "var(--c-input-border)"}`, borderRadius: 7, background: form.priority === p.label ? p.bg : "var(--c-card)", color: form.priority === p.label ? p.color : "var(--c-text-faint)", cursor: "pointer" }}>
                     {p.label}
                   </button>
@@ -452,21 +480,21 @@ function CreateTaskModal({
           {/* Location & Schedule */}
           <SectionHdr label="LOCATION & SCHEDULE" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 }}>
-            <CFField label="Area">
-              <select style={cf.input} value={form.area} onChange={e => set("area", e.target.value)}>
+            <CFField label="Area" error={errors.area}>
+              <select style={{ ...cf.input, ...(errors.area ? validationStyles.inputErrorBorder : null) }} value={form.area} onChange={e => setField("area", e.target.value)}>
                 {["Outside Main Door", "Floor 1", "Floor 2", "Rooftop", "Basement", "Conference Hall"].map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </CFField>
-            <CFField label="Frequency">
-              <select style={cf.input} value={form.frequency} onChange={e => set("frequency", e.target.value)}>
+            <CFField label="Frequency" error={errors.frequency}>
+              <select style={{ ...cf.input, ...(errors.frequency ? validationStyles.inputErrorBorder : null) }} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
                 {["Daily", "Weekly", "Daily, Weekly, Weekends", "Monthly", "Once"].map(f => <option key={f} value={f}>{f}</option>)}
               </select>
             </CFField>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <CFField label="Start Time"><input style={cf.input} type="time" value={form.startTime} onChange={e => set("startTime", e.target.value)} /></CFField>
-            <CFField label="End Time"><input style={cf.input} type="time" value={form.endTime} onChange={e => set("endTime", e.target.value)} /></CFField>
-            <CFField label="Duration"><input style={cf.input} placeholder="e.g. 30 min" value={form.duration} onChange={e => set("duration", e.target.value)} /></CFField>
+            <CFField label="Start Time"><input style={cf.input} type="time" value={form.startTime} onChange={e => setField("startTime", e.target.value)} /></CFField>
+            <CFField label="End Time"><input style={cf.input} type="time" value={form.endTime} onChange={e => setField("endTime", e.target.value)} /></CFField>
+            <CFField label="Duration"><input style={cf.input} placeholder="e.g. 30 min" value={form.duration} onChange={e => setField("duration", e.target.value)} /></CFField>
           </div>
 
           {/* Attachments */}
@@ -495,11 +523,46 @@ function SectionHdr({ label }: { label: string }) {
     </div>
   );
 }
-function CFField({ label, children }: { label: string; children: React.ReactNode }) {
+function CFField({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
       <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--c-text-muted)" }}>{label}</label>
       {children}
+      {error ? <div style={validationStyles.errorText}>{error}</div> : null}
+    </div>
+  );
+}
+
+function TaskManagerSkeleton() {
+  return (
+    <div>
+      <SkeletonTheme />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <SkeletonBlock width={180} height={28} />
+          <SkeletonBlock width={300} height={12} style={{ marginTop: 10 }} />
+        </div>
+        <SkeletonBlock width={118} height={38} radius={10} />
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+        {Array.from({ length: 3 }, (_, index) => (
+          <SkeletonBlock key={index} width={124} height={32} radius={20} />
+        ))}
+        <div style={{ marginLeft: "auto" }}>
+          <SkeletonBlock width={92} height={16} />
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <SkeletonBlock width={94} height={14} />
+              <SkeletonBlock width={24} height={20} radius={999} />
+            </div>
+            <SkeletonCardList count={2} lines={3} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -515,7 +578,7 @@ export function TaskManagerPage() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const { showToast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
 
   useShellHeader({ showSearch: true });
@@ -550,7 +613,7 @@ export function TaskManagerPage() {
       id,
       title: String(t.title ?? t.taskName ?? "Untitled Task"),
       description: String(t.description ?? ""),
-      priority: (String(t.priority ?? "NORMAL").toUpperCase() as TaskPriority) ?? "NORMAL",
+      priority: normalizePriority(t.priority),
       status: statusFromApi(String(t.status ?? "")),
       assignedTo: {
         id: t.assigneeId ?? undefined,
@@ -570,7 +633,7 @@ export function TaskManagerPage() {
   async function refreshTasks() {
     try {
       setLoading(true);
-      const list = await getTasks({});
+      const list = await getTasks();
       setTasks((Array.isArray(list) ? list : []).map((t, idx) => toUiTask(t as ApiTask, idx)));
     } catch (e) {
       console.error(e);
@@ -663,6 +726,10 @@ export function TaskManagerPage() {
       })),
     [tasks],
   );
+
+  if (loading) {
+    return <TaskManagerSkeleton />;
+  }
 
   return (
     <div>

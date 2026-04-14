@@ -6,15 +6,16 @@ import {
   useFonts,
 } from "@expo-google-fonts/montserrat";
 import { ThemeProvider } from "@madhuban/theme";
+import Constants from "expo-constants";
 import * as ExpoSplashScreen from "expo-splash-screen";
 import { Stack } from "expo-router";
 import { useEffect } from "react";
 
-const apiBase =
-  process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "") ??
-  process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ??
-  "https://madhuban360-backend.onrender.com";
-configureApiBaseUrl(apiBase);
+const apiBaseFromExpo =
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined)?.replace(/\/+$/, "") ?? null;
+const apiBaseFromEnv = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ?? null;
+
+configureApiBaseUrl(apiBaseFromExpo ?? apiBaseFromEnv);
 import { AuthProvider } from "../src/context/AuthContext";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 

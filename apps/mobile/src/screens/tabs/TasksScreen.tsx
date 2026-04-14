@@ -1,9 +1,16 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { getMyTasks, startMyTask, submitMyTaskCompletion, updateMyTaskStatus } from "@madhuban/api";
+import {
+  getStaffTasks,
+  uploadStaffTaskAfterPhoto,
+  uploadStaffTaskBeforePhoto,
+  type StaffTasksResponse,
+} from "@madhuban/api";
 import { colors, font, radii } from "@madhuban/theme";
-import { useCallback, useEffect, useState } from "react";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -13,13 +20,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { SkeletonBlock } from "../../components/SkeletonBlock";
 import { useAuth } from "../../context/AuthContext";
 import { RolePageLayout, formatRoleLabel } from "../../layouts/RolePageLayout";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type TaskPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "COMPLETED" | "REASSIGNED";
 type FilterKey = "all" | "critical" | "high" | "done";
-type ModalView = "detail" | "before-image" | "ongoing-confirm" | "after-image";
+type ModalStep = "detail" | "before" | "after";
+type CaptureTarget = "before" | "after" | null;
+
+type TaskPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "COMPLETED" | "REASSIGNED";
 
 interface TaskItem {
   id: string;
@@ -28,112 +37,20 @@ interface TaskItem {
   zone: string;
   timeStart: string;
   timeEnd?: string;
-  estMinutes?: number;
   priority: TaskPriority;
-  frequency?: string;
-  materials?: string[];
-  equipment?: string[];
-  checkerName?: string;
-  checkerRole?: string;
-  checkerInitials?: string;
+  status: string;
+  approvalStatus?: string | null;
+  decisionNote?: string | null;
+  isCompleted: boolean;
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const MOCK_TASKS: TaskItem[] = [
-  {
-    id: "1",
-    title: "Toilet Cleaning",
-    location: "Washrooms (M/F)",
-    zone: "WASHROOMS (M/F)",
-    timeStart: "8:10",
-    timeEnd: "8:30",
-    estMinutes: 20,
-    priority: "CRITICAL",
-    frequency: "Daily · Every Shift",
-    materials: ["Toilet brush", "Harpic", "Gloves", "Mop"],
-    equipment: ["Mop bucket", "Spray bottle"],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
-  {
-    id: "2",
-    title: "Floor Mopping",
-    location: "Washrooms (M/F)",
-    zone: "WASHROOMS (M/F)",
-    timeStart: "8:30",
-    timeEnd: "8:40",
-    estMinutes: 10,
-    priority: "HIGH",
-    frequency: "Daily · Every Shift",
-    materials: ["Mop", "Bucket", "Floor cleaner"],
-    equipment: ["Mop bucket"],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
-  {
-    id: "3",
-    title: "Restock CEO Cabin Pantry",
-    location: "CEO Cabin · Floor 3",
-    zone: "CEO CABIN",
-    timeStart: "9:00 AM",
-    estMinutes: 15,
-    priority: "HIGH",
-    frequency: "Daily",
-    materials: ["Water bottles", "Tissues"],
-    equipment: [],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
-  {
-    id: "4",
-    title: "Sanitize Main Entrance",
-    location: "Main Entrance · GF",
-    zone: "MAIN ENTRANCE",
-    timeStart: "8:00 AM",
-    priority: "COMPLETED",
-    frequency: "Daily",
-    materials: ["Sanitizer", "Wipes"],
-    equipment: [],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
-  {
-    id: "5",
-    title: "Wipe down desking area",
-    location: "IT Dept · Floor 2",
-    zone: "IT DEPARTMENT",
-    timeStart: "11:00 AM",
-    estMinutes: 30,
-    priority: "MEDIUM",
-    frequency: "Weekly",
-    materials: ["Cleaning cloth", "Spray"],
-    equipment: [],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
-  {
-    id: "6",
-    title: "Clear Trash Bins",
-    location: "Cafeteria · GF",
-    zone: "CAFETERIA",
-    timeStart: "10:30 AM",
-    estMinutes: 15,
-    priority: "REASSIGNED",
-    frequency: "Daily",
-    materials: ["Trash bags"],
-    equipment: [],
-    checkerName: "Rahul Tupe",
-    checkerRole: "Admin · Quality Checker",
-    checkerInitials: "RT",
-  },
+const FILTERS: Array<{ key: FilterKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "critical", label: "Critical" },
+  { key: "high", label: "High" },
+  { key: "done", label: "Done" },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getPriorityConfig(priority: string) {
   switch (priority.toUpperCase()) {
     case "CRITICAL":
@@ -151,26 +68,137 @@ function getPriorityConfig(priority: string) {
   }
 }
 
-// ─── Photo placeholder ────────────────────────────────────────────────────────
+function normalizePriority(task: StaffTasksResponse["tasks"][number]): TaskPriority {
+  if (task.status === "COMPLETED") return "COMPLETED";
+  const priority = String(task.masterTask.priority ?? "LOW").toUpperCase();
+  if (priority === "CRITICAL" || priority === "HIGH" || priority === "MEDIUM" || priority === "LOW") {
+    return priority;
+  }
+  return "LOW";
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "";
+  const [hour, minute] = value.split(":");
+  if (!hour || !minute) return value;
+  const date = new Date();
+  date.setHours(Number(hour), Number(minute), 0, 0);
+  return date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function mapTask(item: StaffTasksResponse["tasks"][number]): TaskItem {
+  const locationParts = [item.location.propertyName, item.location.floorNo ? `Floor ${item.location.floorNo}` : null].filter(Boolean);
+  return {
+    id: String(item.id),
+    title: item.masterTask.title,
+    location: locationParts.join(" · ") || "Unassigned Location",
+    zone: item.masterTask.zone ?? "UNASSIGNED ZONE",
+    timeStart: formatTime(item.masterTask.startTime) || "--",
+    timeEnd: formatTime(item.masterTask.endTime) || undefined,
+    priority: normalizePriority(item),
+    status: item.status,
+    approvalStatus: item.approval?.status ?? null,
+    decisionNote: item.approval?.decisionNote ?? null,
+    isCompleted: item.status === "COMPLETED",
+  };
+}
+
+function ShiftProgressCard({
+  counts,
+  progress,
+}: {
+  counts: StaffTasksResponse["counts"] | null;
+  progress: StaffTasksResponse["progress"] | null;
+}) {
+  const done = progress?.done ?? 0;
+  const total = progress?.total ?? 0;
+  const percent = progress?.percent ?? 0;
+
+  return (
+    <View style={s.progressCard}>
+      <View style={s.progressTopRow}>
+        <Text style={s.progressLabel}>Shift Progress</Text>
+        <Text style={s.progressPct}>{percent}%</Text>
+      </View>
+      <Text style={s.progressFraction}>
+        <Text style={s.progressFractionBig}>{done}</Text>
+        <Text style={s.progressFractionTotal}> / {total}</Text>
+      </Text>
+      <View style={s.progressTrack}>
+        <View style={[s.progressFill, { width: `${percent}%` }]} />
+      </View>
+      <Text style={s.progressSummary}>
+        {counts?.critical ?? 0} critical · {counts?.high ?? 0} high · {counts?.done ?? 0} done
+      </Text>
+    </View>
+  );
+}
+
+function TaskCard({
+  task,
+  onAction,
+}: {
+  task: TaskItem;
+  onAction: (task: TaskItem) => void;
+}) {
+  const cfg = getPriorityConfig(task.priority);
+
+  return (
+    <View style={[s.taskCard, { borderLeftColor: cfg.stripe }]}>
+      <View style={s.taskCardTop}>
+        <View style={[s.priorityBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+          <Text style={[s.priorityBadgeText, { color: cfg.text }]}>{task.priority}</Text>
+        </View>
+        <View style={s.timeRow}>
+          <View style={s.timeDot} />
+          <Text style={s.timeText}>
+            {task.timeStart}
+            {task.timeEnd ? ` - ${task.timeEnd}` : ""}
+          </Text>
+        </View>
+      </View>
+
+      <View style={s.taskCardMiddle}>
+        <Text style={[s.taskTitle, task.isCompleted && s.taskTitleDone]}>{task.title}</Text>
+        <Pressable style={s.actionBtn} onPress={() => onAction(task)}>
+          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+        </Pressable>
+      </View>
+
+      <View style={s.locationRow}>
+        <Ionicons name="location-outline" size={14} color="#7C8AA2" />
+        <Text style={s.locationText}>{task.location}</Text>
+      </View>
+
+      {task.decisionNote ? (
+        <View style={s.notePill}>
+          <Text style={s.notePillText}>{task.decisionNote}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function CameraCapture({
   label,
-  taken,
-  onCapture,
+  imageUri,
+  onCapturePress,
 }: {
   label: string;
-  taken: boolean;
-  onCapture: () => void;
+  imageUri: string | null;
+  onCapturePress: () => void;
 }) {
   return (
-    <Pressable
-      style={[ms.cameraBox, taken && ms.cameraBoxDone]}
-      onPress={onCapture}
-    >
-      {taken ? (
+    <Pressable style={[ms.cameraBox, imageUri && ms.cameraBoxDone]} onPress={onCapturePress}>
+      {imageUri ? (
         <>
-          <View style={ms.cameraPreviewFace}>
-            <Ionicons name="checkmark-circle" size={44} color="#10B981" />
-          </View>
+          <Image source={{ uri: imageUri }} style={ms.cameraPreviewImage} />
+          <View style={ms.cameraPreviewShade} />
+          <Ionicons name="checkmark-circle" size={44} color="#10B981" />
           <Text style={ms.cameraPreviewLabel}>Photo captured</Text>
           <Text style={ms.cameraRetakeHint}>Tap to retake</Text>
         </>
@@ -187,578 +215,266 @@ function CameraCapture({
   );
 }
 
-// ─── TaskDetailModal ──────────────────────────────────────────────────────────
 function TaskDetailModal({
   task,
-  isOngoing,
+  visible,
+  step,
+  beforeUri,
+  afterUri,
+  submitting,
+  onStartTask,
+  onOpenCamera,
+  onAdvanceAfterBefore,
+  onSubmitAfter,
   onClose,
-  onTaskStart,
-  onTaskComplete,
 }: {
   task: TaskItem | null;
-  isOngoing: boolean;
+  visible: boolean;
+  step: ModalStep;
+  beforeUri: string | null;
+  afterUri: string | null;
+  submitting: boolean;
+  onStartTask: () => void;
+  onOpenCamera: (target: CaptureTarget) => void;
+  onAdvanceAfterBefore: () => void;
+  onSubmitAfter: () => void;
   onClose: () => void;
-  onTaskStart: (taskId: string) => void;
-  onTaskComplete: (taskId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [view, setView] = useState<ModalView>("detail");
-  const [beforeTaken, setBeforeTaken] = useState(false);
-  const [afterTaken, setAfterTaken] = useState(false);
-
-  // Reset local state when task changes
-  const resetState = useCallback(() => {
-    setBeforeTaken(false);
-    setAfterTaken(false);
-    setView(isOngoing ? "ongoing-confirm" : "detail");
-  }, [isOngoing]);
-
-  useEffect(() => {
-    if (task) resetState();
-  }, [task, resetState]);
 
   if (!task) return null;
   const cfg = getPriorityConfig(task.priority);
 
-  function handleSubmitBefore() {
-    if (!beforeTaken) return;
-    onTaskStart(task!.id);
-    onClose();
-  }
-
-  function handleSubmitAfter() {
-    if (!afterTaken) return;
-    onTaskComplete(task!.id);
-    onClose();
-  }
-
-  // ── Header (shared across all views) ──
-  const header = (
-    <View style={ms.zoneBar}>
-      <View style={ms.zoneBarLeft}>
-        <View style={ms.zoneIconWrap}>
-          <Ionicons name="grid-outline" size={15} color="#64B5F6" />
-        </View>
-        <View>
-          <Text style={ms.zoneName}>{task.zone}</Text>
-          <Text style={ms.zoneMeta}>
-            {task.timeStart}
-            {task.timeEnd ? ` - ${task.timeEnd}` : ""}
-          </Text>
-        </View>
-      </View>
-      <View style={ms.zoneBarRight}>
-        <View style={[ms.badgeSmall, { backgroundColor: cfg.bg }]}>
-          <Text style={[ms.badgeSmallText, { color: cfg.text }]}>{task.priority}</Text>
-        </View>
-        <Pressable onPress={onClose} style={ms.closeBtn} hitSlop={10}>
-          <Ionicons name="close" size={18} color="#94A3B8" />
-        </Pressable>
-      </View>
-    </View>
-  );
-
-  // ── Detail view ──
-  if (view === "detail") {
-    return (
-      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-        <View style={ms.overlay}>
-          <Pressable style={ms.backdrop} onPress={onClose} />
-          <View style={[ms.sheet, { paddingBottom: insets.bottom + 12 }]}>
-            {header}
-
-            <ScrollView
-              style={ms.scroll}
-              contentContainerStyle={ms.scrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Task header row */}
-              <View style={ms.taskHeaderRow}>
-                <View style={ms.taskCheckCircle} />
-                <View style={ms.taskHeaderBody}>
-                  <Text style={ms.taskHeaderTitle}>{task.title}</Text>
-                  <View style={ms.taskHeaderMeta}>
-                    <View style={ms.dotGreen} />
-                    <Text style={ms.taskHeaderMetaText}>{task.location}</Text>
-                  </View>
-                  {task.frequency ? (
-                    <View style={ms.freqTag}>
-                      <Text style={ms.freqTagText}>{task.frequency}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <View style={ms.taskTimeCol}>
-                  <Text style={ms.taskTimeVal}>{task.timeStart}</Text>
-                  {task.timeEnd ? <Text style={ms.taskTimeVal}>{task.timeEnd}</Text> : null}
-                  {task.estMinutes ? (
-                    <Text style={ms.taskTimeMuted}>{task.estMinutes}m</Text>
-                  ) : null}
-                </View>
-              </View>
-
-              <View style={ms.divider} />
-
-              {/* Priority */}
-              <View style={ms.section}>
-                <View style={ms.sectionLabelRow}>
-                  <View style={ms.sectionDot} />
-                  <Text style={ms.sectionLabel}>PRIORITY</Text>
-                </View>
-                <View style={[ms.priorityChip, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
-                  <Text style={[ms.priorityChipText, { color: cfg.text }]}>
-                    {task.priority.charAt(0) + task.priority.slice(1).toLowerCase()}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Frequency */}
-              <View style={ms.section}>
-                <View style={ms.sectionLabelRow}>
-                  <Ionicons name="calendar-outline" size={12} color="#7C8AA2" />
-                  <Text style={ms.sectionLabel}>FREQUENCY</Text>
-                </View>
-                <Text style={ms.sectionValue}>{task.frequency ?? "—"}</Text>
-              </View>
-
-              {/* Materials */}
-              {(task.materials ?? []).length > 0 ? (
-                <View style={ms.section}>
-                  <View style={ms.sectionLabelRow}>
-                    <Ionicons name="color-fill-outline" size={12} color="#7C8AA2" />
-                    <Text style={ms.sectionLabel}>MATERIALS</Text>
-                  </View>
-                  <View style={ms.chipRow}>
-                    {task.materials!.map((m) => (
-                      <View key={m} style={ms.chip}>
-                        <Text style={ms.chipText}>{m}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Equipment */}
-              {(task.equipment ?? []).length > 0 ? (
-                <View style={ms.section}>
-                  <View style={ms.sectionLabelRow}>
-                    <Feather name="tool" size={12} color="#7C8AA2" />
-                    <Text style={ms.sectionLabel}>EQUIPMENT</Text>
-                  </View>
-                  <View style={ms.chipRow}>
-                    {task.equipment!.map((e) => (
-                      <View key={e} style={ms.chip}>
-                        <Feather name="tool" size={11} color="#475569" />
-                        <Text style={ms.chipText}>{e}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Checker */}
-              {task.checkerName ? (
-                <View style={ms.section}>
-                  <View style={ms.sectionLabelRow}>
-                    <Ionicons name="checkmark-outline" size={12} color="#7C8AA2" />
-                    <Text style={ms.sectionLabel}>CHECKER</Text>
-                  </View>
-                  <View style={ms.checkerRow}>
-                    <View style={ms.checkerAvatar}>
-                      <Text style={ms.checkerAvatarText}>{task.checkerInitials}</Text>
-                    </View>
-                    <View>
-                      <Text style={ms.checkerName}>{task.checkerName}</Text>
-                      <Text style={ms.checkerRole}>{task.checkerRole}</Text>
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-            </ScrollView>
-
-            <Pressable style={ms.bottomBtn} onPress={() => setView("before-image")}>
-              <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" />
-              <Text style={ms.bottomBtnText}>Start Task</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-
-  // ── Before image view ──
-  if (view === "before-image") {
-    return (
-      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-        <View style={ms.overlay}>
-          <Pressable style={ms.backdrop} onPress={onClose} />
-          <View style={[ms.sheet, { paddingBottom: insets.bottom + 12 }]}>
-            {header}
-
-            <View style={ms.captureViewWrap}>
-              <Pressable style={ms.captureBackRow} onPress={() => setView("detail")}>
-                <Feather name="arrow-left" size={14} color="#64748B" />
-                <Text style={ms.captureBackText}>Back to details</Text>
-              </Pressable>
-
-              <Text style={ms.captureHeading}>Before Photo</Text>
-              <Text style={ms.captureSubheading}>
-                Capture the area <Text style={{ fontFamily: font.family.bold }}>before</Text> starting the task
-              </Text>
-
-              <CameraCapture
-                label="Tap to Take Before Photo"
-                taken={beforeTaken}
-                onCapture={() => setBeforeTaken((v) => !v)}
-              />
-
-              <View style={ms.captureHintRow}>
-                <Ionicons name="information-circle-outline" size={14} color="#94A3B8" />
-                <Text style={ms.captureHint}>
-                  Make sure the area is clearly visible in the photo
-                </Text>
-              </View>
-            </View>
-
-            <Pressable
-              style={[ms.bottomBtn, !beforeTaken && ms.bottomBtnDisabled]}
-              onPress={handleSubmitBefore}
-              disabled={!beforeTaken}
-            >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-              <Text style={ms.bottomBtnText}>Submit & Start Task</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-
-  // ── Ongoing confirm view ──
-  if (view === "ongoing-confirm") {
-    return (
-      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-        <View style={ms.overlay}>
-          <Pressable style={ms.backdrop} onPress={onClose} />
-          <View style={[ms.sheet, { paddingBottom: insets.bottom + 12 }]}>
-            {header}
-
-            <View style={ms.captureViewWrap}>
-              <View style={ms.ongoingBanner}>
-                <View style={ms.ongoingBannerIcon}>
-                  <Ionicons name="time-outline" size={22} color="#D97706" />
-                </View>
-                <View style={ms.ongoingBannerBody}>
-                  <Text style={ms.ongoingBannerTitle}>Task In Progress</Text>
-                  <Text style={ms.ongoingBannerSub}>
-                    {task.title} · {task.location}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={ms.ongoingTimeRow}>
-                <Ionicons name="play-circle-outline" size={14} color="#10B981" />
-                <Text style={ms.ongoingTimeText}>Before photo submitted · task started</Text>
-              </View>
-
-              <View style={ms.divider} />
-
-              <Text style={ms.ongoingQuestion}>Are you done with this task?</Text>
-              <Text style={ms.ongoingSubQuestion}>
-                If yes, you'll be asked to take an after photo to confirm completion.
-              </Text>
-            </View>
-
-            <View style={ms.ongoingActions}>
-              <Pressable
-                style={ms.bottomBtn}
-                onPress={() => setView("after-image")}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-                <Text style={ms.bottomBtnText}>Yes, Take After Photo</Text>
-              </Pressable>
-              <Pressable style={ms.ghostBtn} onPress={onClose}>
-                <Text style={ms.ghostBtnText}>Still Working</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-
-  // ── After image view ──
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={ms.overlay}>
         <Pressable style={ms.backdrop} onPress={onClose} />
         <View style={[ms.sheet, { paddingBottom: insets.bottom + 12 }]}>
-          {header}
-
-          <View style={ms.captureViewWrap}>
-            <Pressable
-              style={ms.captureBackRow}
-              onPress={() => setView("ongoing-confirm")}
-            >
-              <Feather name="arrow-left" size={14} color="#64748B" />
-              <Text style={ms.captureBackText}>Back</Text>
-            </Pressable>
-
-            <Text style={ms.captureHeading}>After Photo</Text>
-            <Text style={ms.captureSubheading}>
-              Capture the area <Text style={{ fontFamily: font.family.bold }}>after</Text> completing the task
-            </Text>
-
-            <CameraCapture
-              label="Tap to Take After Photo"
-              taken={afterTaken}
-              onCapture={() => setAfterTaken((v) => !v)}
-            />
-
-            <View style={ms.captureHintRow}>
-              <Ionicons name="information-circle-outline" size={14} color="#94A3B8" />
-              <Text style={ms.captureHint}>
-                Ensure the completed work is clearly visible
-              </Text>
+          <View style={ms.zoneBar}>
+            <View style={ms.zoneBarLeft}>
+              <View style={ms.zoneIconWrap}>
+                <Ionicons name="grid-outline" size={15} color="#64B5F6" />
+              </View>
+              <View>
+                <Text style={ms.zoneName}>{task.zone}</Text>
+                <Text style={ms.zoneMeta}>
+                  {task.timeStart}
+                  {task.timeEnd ? ` - ${task.timeEnd}` : ""}
+                </Text>
+              </View>
+            </View>
+            <View style={ms.zoneBarRight}>
+              <View style={[ms.badgeSmall, { backgroundColor: cfg.bg }]}>
+                <Text style={[ms.badgeSmallText, { color: cfg.text }]}>{task.priority}</Text>
+              </View>
+              <Pressable onPress={onClose} style={ms.closeBtn} hitSlop={10}>
+                <Ionicons name="close" size={18} color="#94A3B8" />
+              </Pressable>
             </View>
           </View>
 
-          <Pressable
-            style={[ms.bottomBtn, ms.bottomBtnSuccess, !afterTaken && ms.bottomBtnDisabled]}
-            onPress={handleSubmitAfter}
-            disabled={!afterTaken}
-          >
-            <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-            <Text style={ms.bottomBtnText}>Submit & Complete Task</Text>
-          </Pressable>
+          <ScrollView style={ms.scroll} contentContainerStyle={ms.scrollContent}>
+            {step === "detail" ? (
+              <>
+                <View style={ms.taskHeaderRow}>
+                  <View style={ms.taskCheckCircle} />
+                  <View style={ms.taskHeaderBody}>
+                    <Text style={ms.taskHeaderTitle}>{task.title}</Text>
+                    <View style={ms.taskHeaderMeta}>
+                      <View style={ms.dotGreen} />
+                      <Text style={ms.taskHeaderMetaText}>{task.location}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={ms.divider} />
+                <View style={ms.section}>
+                  <View style={ms.sectionLabelRow}>
+                    <View style={ms.sectionDot} />
+                    <Text style={ms.sectionLabel}>STATUS</Text>
+                  </View>
+                  <Text style={ms.sectionValue}>{task.isCompleted ? "Completed" : "Pending"}</Text>
+                </View>
+                {task.decisionNote ? (
+                  <View style={ms.section}>
+                    <View style={ms.sectionLabelRow}>
+                      <Ionicons name="alert-circle-outline" size={12} color="#7C8AA2" />
+                      <Text style={ms.sectionLabel}>CHECKER NOTE</Text>
+                    </View>
+                    <Text style={ms.sectionValue}>{task.decisionNote}</Text>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
+            {step === "before" ? (
+              <View style={ms.captureViewWrap}>
+                <Text style={ms.captureHeading}>Before Photo</Text>
+                <Text style={ms.captureSubheading}>
+                  Capture the area before starting the task.
+                </Text>
+                <CameraCapture
+                  label="Tap to Take Before Photo"
+                  imageUri={beforeUri}
+                  onCapturePress={() => onOpenCamera("before")}
+                />
+              </View>
+            ) : null}
+
+            {step === "after" ? (
+              <View style={ms.captureViewWrap}>
+                <Text style={ms.captureHeading}>After Photo</Text>
+                <Text style={ms.captureSubheading}>
+                  Capture the area after completing the task.
+                </Text>
+                <CameraCapture
+                  label="Tap to Take After Photo"
+                  imageUri={afterUri}
+                  onCapturePress={() => onOpenCamera("after")}
+                />
+              </View>
+            ) : null}
+          </ScrollView>
+
+          {step === "detail" ? (
+            <Pressable style={ms.bottomBtn} onPress={onStartTask}>
+              <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" />
+              <Text style={ms.bottomBtnText}>Start Task</Text>
+            </Pressable>
+          ) : null}
+
+          {step === "before" ? (
+            <Pressable
+              style={[ms.bottomBtn, (!beforeUri || submitting) && ms.bottomBtnDisabled]}
+              onPress={onAdvanceAfterBefore}
+              disabled={!beforeUri || submitting}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+              <Text style={ms.bottomBtnText}>{submitting ? "Uploading..." : "Submit Before Photo"}</Text>
+            </Pressable>
+          ) : null}
+
+          {step === "after" ? (
+            <Pressable
+              style={[ms.bottomBtn, (!afterUri || submitting) && ms.bottomBtnDisabled]}
+              onPress={onSubmitAfter}
+              disabled={!afterUri || submitting}
+            >
+              <Ionicons name="checkmark-done-outline" size={18} color="#FFFFFF" />
+              <Text style={ms.bottomBtnText}>{submitting ? "Uploading..." : "Submit After Photo"}</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Modal>
   );
 }
 
-// ─── TaskCard ─────────────────────────────────────────────────────────────────
-function TaskCard({
-  task,
-  isOngoing,
-  isCompleted,
-  onAction,
-}: {
-  task: TaskItem;
-  isOngoing: boolean;
-  isCompleted: boolean;
-  onAction: (task: TaskItem, openAs: ModalView) => void;
-}) {
-  const effectivePriority = isCompleted ? "COMPLETED" : task.priority;
-  const cfg = getPriorityConfig(effectivePriority);
-
-  if (isOngoing) {
-    return (
-      <Pressable
-        style={s.ongoingCard}
-        onPress={() => onAction(task, "ongoing-confirm")}
-      >
-        <View style={s.ongoingCardHeader}>
-          <View style={s.ongoingBadge}>
-            <Ionicons name="time-outline" size={11} color="#D97706" style={{ marginRight: 3 }} />
-            <Text style={s.ongoingBadgeText}>ONGOING</Text>
-          </View>
-          <Text style={s.ongoingTimeText}>
-            {task.timeStart}
-            {task.timeEnd ? ` - ${task.timeEnd}` : ""}
-          </Text>
-        </View>
-        <Text style={s.ongoingTitle}>{task.title}</Text>
-        <View style={s.locationRow}>
-          <Ionicons name="location-outline" size={12} color="#D97706" />
-          <Text style={[s.locationText, { color: "#D97706" }]}>{task.location}</Text>
-        </View>
-        <View style={s.ongoingFooter}>
-          <Text style={s.ongoingFooterHint}>Tap to check progress or mark done</Text>
-          <View style={s.ongoingArrow}>
-            <Ionicons name="chevron-forward" size={14} color="#D97706" />
-          </View>
-        </View>
-      </Pressable>
-    );
-  }
-
-  return (
-    <View style={[s.taskCard, { borderLeftColor: cfg.stripe }]}>
-      <View style={s.taskCardTop}>
-        <View style={[s.priorityBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
-          {isCompleted ? (
-            <Ionicons name="checkmark-circle" size={11} color={cfg.text} style={{ marginRight: 3 }} />
-          ) : null}
-          <Text style={[s.priorityBadgeText, { color: cfg.text }]}>{effectivePriority}</Text>
-        </View>
-        {(task.timeStart || task.timeEnd) ? (
-          <View style={s.timeRow}>
-            <View style={s.timeDot} />
-            <Text style={s.timeText}>
-              {task.timeStart}
-              {task.timeEnd ? ` - ${task.timeEnd}` : ""}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      <View style={s.taskCardMiddle}>
-        <Text style={[s.taskTitle, isCompleted && s.taskTitleDone]}>{task.title}</Text>
-        <Pressable style={s.actionBtn} onPress={() => onAction(task, "detail")}>
-          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
-        </Pressable>
-      </View>
-
-      <View style={s.locationRow}>
-        <Ionicons name="location-outline" size={12} color="#7C8AA2" />
-        <Text style={s.locationText}>{task.location}</Text>
-      </View>
-
-      {task.estMinutes ? <Text style={s.estText}>EST: {task.estMinutes}M</Text> : null}
-    </View>
-  );
-}
-
-// ─── ShiftProgressCard ────────────────────────────────────────────────────────
-function ShiftProgressCard({
-  tasks,
-  completedIds,
-}: {
-  tasks: TaskItem[];
-  completedIds: Set<string>;
-}) {
-  const done =
-    tasks.filter((t) => t.priority === "COMPLETED" || completedIds.has(t.id)).length;
-  const total = tasks.length;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  return (
-    <View style={s.progressCard}>
-      <View style={s.progressTopRow}>
-        <Text style={s.progressLabel}>SHIFT PROGRESS</Text>
-        <Text style={s.progressPct}>{pct}%</Text>
-      </View>
-      <Text style={s.progressFraction}>
-        <Text style={s.progressFractionBig}>{done}</Text>
-        <Text style={s.progressFractionTotal}>/{total}</Text>
-      </Text>
-      <View style={s.progressTrack}>
-        <View style={[s.progressFill, { width: `${pct}%` as `${number}%` }]} />
-      </View>
-    </View>
-  );
-}
-
-// ─── Filters ──────────────────────────────────────────────────────────────────
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "critical", label: "Critical" },
-  { key: "high", label: "High" },
-  { key: "done", label: "Done" },
-];
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
 export function TasksScreen() {
   const { role } = useAuth();
-  const [filter, setFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
-  const [tasks, setTasks] = useState<TaskItem[]>(MOCK_TASKS);
-  const [ongoingTaskIds, setOngoingTaskIds] = useState<Set<string>>(new Set());
-  const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
+  const [response, setResponse] = useState<StaffTasksResponse | null>(null);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [filter, setFilter] = useState<FilterKey>("all");
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
-  const [modalInitialView, setModalInitialView] = useState<ModalView>("detail");
+  const [step, setStep] = useState<ModalStep>("detail");
+  const [beforeUri, setBeforeUri] = useState<string | null>(null);
+  const [afterUri, setAfterUri] = useState<string | null>(null);
+  const [captureTarget, setCaptureTarget] = useState<CaptureTarget>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView | null>(null);
+  const insets = useSafeAreaInsets();
 
-  function toTaskItem(raw: any): TaskItem {
-    const status = String(raw?.status ?? "").toUpperCase().replace(/\\s/g, "_");
-    const priorityRaw = String(raw?.priority ?? "MEDIUM").toUpperCase();
-    const priority: TaskPriority =
-      status === "COMPLETED"
-        ? "COMPLETED"
-        : (["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(priorityRaw)
-            ? (priorityRaw as TaskPriority)
-            : "MEDIUM");
-    return {
-      id: String(raw?._id ?? raw?.id ?? ""),
-      title: String(raw?.title ?? raw?.taskName ?? "Untitled Task"),
-      location: String(raw?.locationFloor ?? raw?.roomNumber ?? raw?.propertyName ?? raw?.location ?? "—"),
-      zone: String(raw?.category ?? raw?.departmentName ?? raw?.department ?? "—"),
-      timeStart: String(raw?.startTime ?? ""),
-      timeEnd: raw?.endTime ? String(raw.endTime) : undefined,
-      estMinutes: raw?.timeDuration != null ? Number(raw.timeDuration) : undefined,
-      priority,
-      frequency: raw?.frequency ? String(raw.frequency) : undefined,
-      materials: Array.isArray(raw?.materials) ? raw.materials : undefined,
-      equipment: Array.isArray(raw?.equipment) ? raw.equipment : undefined,
-      checkerName: raw?.checker ? String(raw.checker) : undefined,
-      approver: raw?.approver ? String(raw.approver) : undefined,
-    } as TaskItem;
-  }
-
-  const load = useCallback(async () => {
+  const load = useCallback(async (nextFilter: FilterKey = filter) => {
     setLoading(true);
     try {
-      const res = await getMyTasks();
-      if (Array.isArray(res) && res.length) {
-        setTasks(res.map(toTaskItem));
-      }
+      const data = await getStaffTasks({ filter: nextFilter, limit: 50 });
+      setResponse(data);
+      setTasks(data.tasks.map(mapTask));
     } catch {
-      // fall through to mock data
+      setResponse(null);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(filter);
+  }, [filter, load]);
 
-  function handleTaskAction(task: TaskItem, openAs: ModalView) {
-    setModalInitialView(openAs);
-    setSelectedTask(task);
+  useEffect(() => {
+    setStep("detail");
+    setBeforeUri(null);
+    setAfterUri(null);
+    setCaptureTarget(null);
+    setCameraOpen(false);
+    setSubmitting(false);
+  }, [selectedTask?.id]);
+
+  async function handleBeforeUpload(task: TaskItem, photoUri: string) {
+    await uploadStaffTaskBeforePhoto(task.id, {
+      uri: photoUri,
+      type: "image/jpeg",
+      name: `before-${task.id}-${Date.now()}.jpg`,
+    });
   }
 
-  function handleTaskStart(taskId: string) {
-    void startMyTask(taskId).catch(() => {
-      void updateMyTaskStatus(taskId, "IN_PROGRESS").catch(() => {});
+  async function handleAfterUpload(task: TaskItem, photoUri: string) {
+    await uploadStaffTaskAfterPhoto(task.id, {
+      uri: photoUri,
+      type: "image/jpeg",
+      name: `after-${task.id}-${Date.now()}.jpg`,
     });
-    setOngoingTaskIds((prev) => new Set([...prev, taskId]));
+    await load(filter);
   }
 
-  function handleTaskComplete(taskId: string) {
-    void submitMyTaskCompletion(taskId, { notes: "Completed from mobile task board." }).catch(
-      () => {
-        void updateMyTaskStatus(taskId, "COMPLETED").catch(() => {});
-      },
-    );
-    setOngoingTaskIds((prev) => {
-      const next = new Set(prev);
-      next.delete(taskId);
-      return next;
-    });
-    setCompletedTaskIds((prev) => new Set([...prev, taskId]));
+  async function openCamera(target: CaptureTarget) {
+    const permission = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
+    if (!permission?.granted) return;
+    setCaptureTarget(target);
+    setCameraOpen(true);
+  }
+
+  async function capturePhoto() {
+    if (!cameraRef.current || !captureTarget) return;
+    const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+    if (captureTarget === "before") setBeforeUri(photo.uri);
+    if (captureTarget === "after") setAfterUri(photo.uri);
+    setCameraOpen(false);
+    setCaptureTarget(null);
+  }
+
+  async function submitBefore() {
+    if (!selectedTask || !beforeUri) return;
+    setSubmitting(true);
+    try {
+      await handleBeforeUpload(selectedTask, beforeUri);
+      setStep("after");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitAfter() {
+    if (!selectedTask || !afterUri) return;
+    setSubmitting(true);
+    try {
+      await handleAfterUpload(selectedTask, afterUri);
+      setSelectedTask(null);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function countFor(key: FilterKey) {
-    if (key === "all") return tasks.length;
-    if (key === "critical") return tasks.filter((t) => t.priority === "CRITICAL").length;
-    if (key === "high") return tasks.filter((t) => t.priority === "HIGH").length;
-    if (key === "done")
-      return tasks.filter((t) => t.priority === "COMPLETED" || completedTaskIds.has(t.id)).length;
-    return 0;
+    if (!response) return 0;
+    if (key === "all") return response.counts.all;
+    if (key === "critical") return response.counts.critical;
+    if (key === "high") return response.counts.high;
+    return response.counts.done;
   }
-
-  const filtered = tasks.filter((t) => {
-    const isCompleted = t.priority === "COMPLETED" || completedTaskIds.has(t.id);
-    if (filter === "critical") return t.priority === "CRITICAL" && !ongoingTaskIds.has(t.id) && !completedTaskIds.has(t.id);
-    if (filter === "high") return t.priority === "HIGH" && !ongoingTaskIds.has(t.id) && !completedTaskIds.has(t.id);
-    if (filter === "done") return isCompleted;
-    return true;
-  });
-
-  const ongoingInView =
-    filter === "all"
-      ? tasks.filter((t) => ongoingTaskIds.has(t.id))
-      : [];
 
   return (
     <>
@@ -766,26 +482,22 @@ export function TasksScreen() {
         eyebrow={`${formatRoleLabel(String(role))} · Workboard`}
         title="Tasks"
         subtitle="Track action items and shift workload."
-        headerCard={<ShiftProgressCard tasks={tasks} completedIds={completedTaskIds} />}
+        headerCard={<ShiftProgressCard counts={response?.counts ?? null} progress={response?.progress ?? null} />}
       >
         <View style={s.root}>
-          {/* Filter tabs */}
           <View style={s.filterRow}>
-            {FILTERS.map((f) => {
-              const active = filter === f.key;
-              const count = countFor(f.key);
+            {FILTERS.map((item) => {
+              const active = filter === item.key;
               return (
                 <Pressable
-                  key={f.key}
-                  onPress={() => setFilter(f.key)}
+                  key={item.key}
+                  onPress={() => setFilter(item.key)}
                   style={[s.filterTab, active && s.filterTabActive]}
                 >
-                  <Text style={[s.filterTabText, active && s.filterTabTextActive]}>
-                    {f.label}
-                  </Text>
+                  <Text style={[s.filterTabText, active && s.filterTabTextActive]}>{item.label}</Text>
                   <View style={[s.filterBadge, active && s.filterBadgeActive]}>
                     <Text style={[s.filterBadgeText, active && s.filterBadgeTextActive]}>
-                      {count}
+                      {countFor(item.key)}
                     </Text>
                   </View>
                 </Pressable>
@@ -793,71 +505,76 @@ export function TasksScreen() {
             })}
           </View>
 
-          {/* List */}
           {loading ? (
-            <View style={s.centered}>
-              <ActivityIndicator color={colors.primary} />
+            <View style={s.listContent}>
+              {[0, 1, 2].map((item) => (
+                <View key={item} style={s.taskCard}>
+                  <SkeletonBlock style={{ height: 18, width: 86, borderRadius: 9 }} />
+                  <SkeletonBlock style={{ height: 18, width: "70%", borderRadius: 9 }} />
+                  <SkeletonBlock style={{ height: 14, width: "60%", borderRadius: 7 }} />
+                </View>
+              ))}
             </View>
           ) : (
             <RefreshableScrollView
               style={s.list}
               contentContainerStyle={s.listContent}
               showsVerticalScrollIndicator={false}
-              onRefresh={load}
+              onRefresh={() => load(filter)}
             >
-              {/* Ongoing tasks pinned at top (All tab only) */}
-              {ongoingInView.map((task) => (
-                <TaskCard
-                  key={`ongoing-${task.id}`}
-                  task={task}
-                  isOngoing
-                  isCompleted={false}
-                  onAction={handleTaskAction}
-                />
-              ))}
-
-              {filtered.length === 0 && ongoingInView.length === 0 ? (
+              {tasks.length === 0 ? (
                 <View style={s.emptyCard}>
                   <Text style={s.emptyTitle}>No tasks here</Text>
                   <Text style={s.emptyText}>Nothing in this category right now.</Text>
                 </View>
               ) : (
-                filtered
-                  .filter((t) => !ongoingTaskIds.has(t.id))
-                  .map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      isOngoing={false}
-                      isCompleted={completedTaskIds.has(task.id)}
-                      onAction={handleTaskAction}
-                    />
-                  ))
+                tasks.map((task, index) => (
+                  <TaskCard key={`${task.id}-${index}`} task={task} onAction={setSelectedTask} />
+                ))
               )}
             </RefreshableScrollView>
           )}
         </View>
       </RolePageLayout>
 
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={ms.cameraScreen}>
+          <CameraView ref={cameraRef} facing="back" style={ms.cameraView} />
+          <View style={[ms.cameraHeader, { paddingTop: insets.top + 12 }]}>
+            <Pressable style={ms.cameraBackButton} onPress={() => setCameraOpen(false)}>
+              <Feather name="x" size={20} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          <View style={[ms.cameraFooter, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+            <Pressable style={ms.captureButtonOuter} onPress={() => void capturePhoto()}>
+              <View style={ms.captureButtonInner} />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <TaskDetailModal
         task={selectedTask}
-        isOngoing={selectedTask ? ongoingTaskIds.has(selectedTask.id) : false}
+        visible={!!selectedTask && !cameraOpen}
+        step={step}
+        beforeUri={beforeUri}
+        afterUri={afterUri}
+        submitting={submitting}
+        onStartTask={() => setStep("before")}
+        onOpenCamera={(target) => void openCamera(target)}
+        onAdvanceAfterBefore={() => void submitBefore()}
+        onSubmitAfter={() => void submitAfter()}
         onClose={() => setSelectedTask(null)}
-        onTaskStart={handleTaskStart}
-        onTaskComplete={handleTaskComplete}
       />
     </>
   );
 }
 
-// ─── Screen styles ────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: {
     flex: 1,
     gap: 14,
   },
-
-  // Progress card
   progressCard: { gap: 8 },
   progressTopRow: {
     flexDirection: "row",
@@ -900,8 +617,11 @@ const s = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: "#529BFF",
   },
-
-  // Filter tabs
+  progressSummary: {
+    color: "rgba(226,233,246,0.7)",
+    fontFamily: font.family.medium,
+    fontSize: 12,
+  },
   filterRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -942,73 +662,11 @@ const s = StyleSheet.create({
     lineHeight: 14,
   },
   filterBadgeTextActive: { color: "#FFFFFF" },
-
-  // Ongoing card
-  ongoingCard: {
-    backgroundColor: "#FFFBF0",
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "#FDE68A",
-    borderLeftWidth: 4,
-    borderLeftColor: "#F59E0B",
-    padding: 16,
-    gap: 8,
+  list: { flex: 1 },
+  listContent: {
+    gap: 12,
+    paddingBottom: 24,
   },
-  ongoingCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  ongoingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-    backgroundColor: "#FEF3C7",
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-  },
-  ongoingBadgeText: {
-    color: "#D97706",
-    fontFamily: font.family.bold,
-    fontSize: 10,
-    letterSpacing: 0.6,
-  },
-  ongoingTimeText: {
-    color: "#D97706",
-    fontFamily: font.family.bold,
-    fontSize: 11,
-  },
-  ongoingTitle: {
-    color: "#162236",
-    fontFamily: font.family.bold,
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  ongoingFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 2,
-  },
-  ongoingFooterHint: {
-    color: "#D97706",
-    fontFamily: font.family.medium,
-    fontSize: 11,
-  },
-  ongoingArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-  },
-
-  // Normal task card
   taskCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
@@ -1088,23 +746,17 @@ const s = StyleSheet.create({
     fontFamily: font.family.medium,
     fontSize: 12,
   },
-  estText: {
-    color: "#94A3B8",
-    fontFamily: font.family.bold,
-    fontSize: 11,
-    letterSpacing: 0.4,
+  notePill: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFF8E6",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-
-  // List
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  list: { flex: 1 },
-  listContent: {
-    gap: 12,
-    paddingBottom: 24,
+  notePillText: {
+    color: "#D97706",
+    fontFamily: font.family.medium,
+    fontSize: 12,
   },
   emptyCard: {
     borderRadius: 22,
@@ -1127,7 +779,6 @@ const s = StyleSheet.create({
   },
 });
 
-// ─── Modal styles ─────────────────────────────────────────────────────────────
 const ms = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -1144,8 +795,6 @@ const ms = StyleSheet.create({
     maxHeight: "90%",
     overflow: "hidden",
   },
-
-  // Zone header bar
   zoneBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1206,16 +855,12 @@ const ms = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Scroll
   scroll: { flexShrink: 1 },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 8,
   },
-
-  // Task header row inside modal
   taskHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1253,38 +898,11 @@ const ms = StyleSheet.create({
     fontFamily: font.family.medium,
     fontSize: 12,
   },
-  freqTag: {
-    alignSelf: "flex-start",
-    borderRadius: radii.full,
-    backgroundColor: "#EEF2F8",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 2,
-  },
-  freqTagText: {
-    color: "#5F718F",
-    fontFamily: font.family.bold,
-    fontSize: 11,
-  },
-  taskTimeCol: { alignItems: "flex-end", gap: 1 },
-  taskTimeVal: {
-    color: "#162236",
-    fontFamily: font.family.bold,
-    fontSize: 12,
-  },
-  taskTimeMuted: {
-    color: "#94A3B8",
-    fontFamily: font.family.medium,
-    fontSize: 11,
-  },
-
   divider: {
     height: 1,
     backgroundColor: "#F1F5F9",
     marginBottom: 16,
   },
-
-  // Sections
   section: { gap: 10, marginBottom: 18 },
   sectionLabelRow: {
     flexDirection: "row",
@@ -1309,69 +927,6 @@ const ms = StyleSheet.create({
     fontFamily: font.family.bold,
     fontSize: 13,
   },
-  priorityChip: {
-    alignSelf: "flex-start",
-    borderRadius: radii.full,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  priorityChipText: {
-    fontFamily: font.family.bold,
-    fontSize: 13,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F8FAFD",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  chipText: {
-    color: "#334155",
-    fontFamily: font.family.medium,
-    fontSize: 12,
-  },
-  checkerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  checkerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#2A3547",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkerAvatarText: {
-    color: "#FFFFFF",
-    fontFamily: font.family.bold,
-    fontSize: 14,
-  },
-  checkerName: {
-    color: "#162236",
-    fontFamily: font.family.bold,
-    fontSize: 14,
-  },
-  checkerRole: {
-    marginTop: 2,
-    color: "#7C8AA2",
-    fontFamily: font.family.medium,
-    fontSize: 12,
-  },
-
-  // Capture view (before / after image)
   captureViewWrap: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -1379,23 +934,11 @@ const ms = StyleSheet.create({
     gap: 12,
     flexShrink: 1,
   },
-  captureBackRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-  },
-  captureBackText: {
-    color: "#64748B",
-    fontFamily: font.family.medium,
-    fontSize: 13,
-  },
   captureHeading: {
     color: "#162236",
     fontFamily: font.family.black,
     fontSize: 20,
     lineHeight: 24,
-    marginTop: 4,
   },
   captureSubheading: {
     color: "#64748B",
@@ -1409,11 +952,12 @@ const ms = StyleSheet.create({
     borderStyle: "dashed",
     borderColor: "#CBD5E1",
     backgroundColor: "#F8FAFD",
-    minHeight: 180,
+    minHeight: 220,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
     padding: 20,
+    overflow: "hidden",
   },
   cameraBoxDone: {
     borderStyle: "solid",
@@ -1440,9 +984,14 @@ const ms = StyleSheet.create({
     fontFamily: font.family.medium,
     fontSize: 12,
   },
-  cameraPreviewFace: {
-    alignItems: "center",
-    justifyContent: "center",
+  cameraPreviewImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  cameraPreviewShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.22)",
   },
   cameraPreviewLabel: {
     color: "#10B981",
@@ -1450,84 +999,10 @@ const ms = StyleSheet.create({
     fontSize: 15,
   },
   cameraRetakeHint: {
-    color: "#94A3B8",
+    color: "#FFFFFF",
     fontFamily: font.family.medium,
     fontSize: 11,
   },
-  captureHintRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  captureHint: {
-    flex: 1,
-    color: "#94A3B8",
-    fontFamily: font.family.medium,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-
-  // Ongoing confirm view
-  ongoingBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 16,
-    backgroundColor: "#FFFBF0",
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    padding: 14,
-  },
-  ongoingBannerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ongoingBannerBody: { flex: 1 },
-  ongoingBannerTitle: {
-    color: "#D97706",
-    fontFamily: font.family.bold,
-    fontSize: 14,
-  },
-  ongoingBannerSub: {
-    marginTop: 2,
-    color: "#92400E",
-    fontFamily: font.family.medium,
-    fontSize: 12,
-  },
-  ongoingTimeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  ongoingTimeText: {
-    color: "#10B981",
-    fontFamily: font.family.medium,
-    fontSize: 12,
-  },
-  ongoingQuestion: {
-    color: "#162236",
-    fontFamily: font.family.black,
-    fontSize: 20,
-    lineHeight: 26,
-    marginTop: 4,
-  },
-  ongoingSubQuestion: {
-    color: "#64748B",
-    fontFamily: font.family.medium,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  ongoingActions: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    gap: 10,
-  },
-
-  // Bottom buttons
   bottomBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1539,9 +1014,6 @@ const ms = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingVertical: 16,
   },
-  bottomBtnSuccess: {
-    backgroundColor: "#10B981",
-  },
   bottomBtnDisabled: {
     opacity: 0.45,
   },
@@ -1550,18 +1022,49 @@ const ms = StyleSheet.create({
     fontFamily: font.family.bold,
     fontSize: 15,
   },
-  ghostBtn: {
-    flexDirection: "row",
+  cameraScreen: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+  cameraView: {
+    flex: 1,
+  },
+  cameraHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    alignItems: "flex-end",
+  },
+  cameraBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    paddingVertical: 14,
+    backgroundColor: "rgba(15,23,42,0.42)",
   },
-  ghostBtnText: {
-    color: "#64748B",
-    fontFamily: font.family.bold,
-    fontSize: 14,
+  cameraFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+  },
+  captureButtonOuter: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 5,
+    borderColor: "rgba(255,255,255,0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureButtonInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: "#FFFFFF",
   },
 });

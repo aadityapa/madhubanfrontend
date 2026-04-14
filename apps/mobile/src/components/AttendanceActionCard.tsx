@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { getTodayAttendance } from "@madhuban/api";
+import { getStaffAttendance, getSupervisorAttendance, getTodayAttendance } from "@madhuban/api";
 import { colors, font, radii, space } from "@madhuban/theme";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -26,15 +26,27 @@ const CHECK_OUT_ACTION = {
 
 export function AttendanceActionCard({ role }: { role: string | undefined }) {
   const [checkedIn, setCheckedIn] = useState(false);
+  const normalizedRole = String(role ?? "").trim().toLowerCase();
+  const isSupervisor = normalizedRole === "supervisor";
+  const isStaff = normalizedRole === "staff";
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
         try {
-          const res = await getTodayAttendance();
-          const data = (res as { data?: unknown } | null)?.data ?? res;
-          const ci = Boolean((data as { checkedIn?: unknown } | null)?.checkedIn);
+          let ci = false;
+          if (isSupervisor) {
+            const data = await getSupervisorAttendance();
+            ci = data.phase === "ACTIVE" || data.phase === "COMPLETED";
+          } else if (isStaff) {
+            const data = await getStaffAttendance();
+            ci = data.phase === "ACTIVE" || data.phase === "COMPLETED";
+          } else {
+            const res = await getTodayAttendance();
+            const data = (res as { data?: unknown } | null)?.data ?? res;
+            ci = Boolean((data as { checkedIn?: unknown } | null)?.checkedIn);
+          }
           if (alive) setCheckedIn(ci);
           await AsyncStorage.setItem(CHECKED_IN_KEY, ci ? "true" : "false");
         } catch {
@@ -45,7 +57,7 @@ export function AttendanceActionCard({ role }: { role: string | undefined }) {
       return () => {
         alive = false;
       };
-    }, []),
+    }, [isStaff, isSupervisor]),
   );
 
   const action = checkedIn ? CHECK_OUT_ACTION : CHECK_IN_ACTION;

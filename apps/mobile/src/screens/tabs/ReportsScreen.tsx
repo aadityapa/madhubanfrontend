@@ -1,59 +1,14 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { getStaffReport, type StaffReportResponse } from "@madhuban/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { SkeletonBlock } from "../../components/SkeletonBlock";
 import { useAuth } from "../../context/AuthContext";
 import { RolePageLayout } from "../../layouts/RolePageLayout";
 import { styles } from "../../styles/screens/tabs/reports.styles";
 
 type HubTab = "performance" | "leave";
-
-const PRIORITY_DATA = [
-  { label: "Critical", value: 45, color: "#F04438" },
-  { label: "High", value: 60, color: "#FF7A00" },
-  { label: "Medium", value: 51, color: "#2962FF" },
-  { label: "Low", value: 30, color: "#17C484" },
-] as const;
-
-const PERFORMANCE_ZONES = [
-  { zone: "Washrooms (M/F)", score: 92, color: "#2962FF" },
-  { zone: "CEO Cabin", score: 100, color: "#17C484" },
-  { zone: "VIP Room", score: 88, color: "#FF6B00" },
-  { zone: "Reception", score: 95, color: "#2962FF" },
-  { zone: "Conference Room", score: 85, color: "#FF6B00" },
-  { zone: "Employee Desks", score: 90, color: "#2962FF" },
-] as const;
-
-const FEEDBACK_ITEMS = [
-  {
-    initials: "RT",
-    task: "Toilet Cleaning",
-    note: "Well done, all areas clean",
-    when: "Today",
-    rating: 5,
-  },
-  {
-    initials: "RT",
-    task: "CEO Cabin Floor",
-    note: "Missed corner near window",
-    when: "Yesterday",
-    rating: 3,
-  },
-  {
-    initials: "RT",
-    task: "VIP Room Prep",
-    note: "Perfect setup, good work",
-    when: "Yesterday",
-    rating: 5,
-  },
-  {
-    initials: "RT",
-    task: "Reception Desk",
-    note: "Dust on monitor stands",
-    when: "2d ago",
-    rating: 4,
-  },
-] as const;
 
 const LEAVE_STATS = [
   {
@@ -94,17 +49,6 @@ const LEAVE_APPLICATIONS = [
   },
 ] as const;
 
-const ATTENDANCE_PATTERN = [
-  [1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 0, 1, 1, 1],
-  [1, 1, 1, 1, 0, 0, 0],
-] as const;
-
-function getMonthLabel(date: Date) {
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
-
 function getStatusStyle(tone: "warning" | "success" | "danger") {
   if (tone === "success") {
     return {
@@ -132,16 +76,95 @@ function getStatusStyle(tone: "warning" | "success" | "danger") {
   };
 }
 
+function getMonthLabel(date: Date) {
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function buildAttendancePattern(report: StaffReportResponse | null): ReadonlyArray<ReadonlyArray<number>> {
+  if (!report) {
+    return [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 0, 1, 1, 1],
+      [1, 1, 1, 1, 0, 0, 0],
+    ] as const;
+  }
+
+  const values = report.attendance.days.map((item) => (item.status === "PRESENT" ? 1 : 0));
+  const grid: number[][] = [];
+  for (let index = 0; index < values.length; index += 7) {
+    grid.push(values.slice(index, index + 7));
+  }
+  return grid;
+}
+
 export function ReportsScreen() {
   const { user } = useAuth();
   const [tab, setTab] = useState<HubTab>("performance");
+  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<StaffReportResponse | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      const data = await getStaffReport(now.getFullYear(), now.getMonth() + 1);
+      setReport(data);
+    } catch {
+      setReport(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const subtitle = useMemo(() => {
     const name = user?.name ?? "Rahul Dhumal";
-    return `${name} · ${getMonthLabel(new Date())}`;
-  }, [user?.name]);
+    return `${name} · ${report?.period.label ?? getMonthLabel(new Date())}`;
+  }, [report?.period.label, user?.name]);
 
-  const attendanceCount = ATTENDANCE_PATTERN.flat().filter(Boolean).length;
+  const priorityData =
+    report?.byPriority.map((item) => ({
+      label: item.priority === "UNKNOWN" ? "Unknown" : item.priority[0] + item.priority.slice(1).toLowerCase(),
+      value: item.count,
+      color:
+        item.priority === "CRITICAL"
+          ? "#F04438"
+          : item.priority === "HIGH"
+            ? "#FF7A00"
+            : item.priority === "MEDIUM"
+              ? "#2962FF"
+              : "#17C484",
+    })) ?? [
+      { label: "Critical", value: 45, color: "#F04438" },
+      { label: "High", value: 60, color: "#FF7A00" },
+      { label: "Medium", value: 51, color: "#2962FF" },
+      { label: "Low", value: 30, color: "#17C484" },
+    ];
+
+  const zoneData =
+    report?.byZone.map((item) => ({
+      zone: item.zoneName,
+      score: item.percent,
+      color: item.percent >= 90 ? "#17C484" : item.percent >= 75 ? "#2962FF" : "#FF6B00",
+    })) ?? [
+      { zone: "Washrooms (M/F)", score: 92, color: "#2962FF" },
+      { zone: "CEO Cabin", score: 100, color: "#17C484" },
+    ];
+
+  const feedbackItems =
+    report?.feedback.map((item) => ({
+      initials: item.checkerInitials,
+      task: item.taskTitle,
+      note: item.comment ?? "No comment added.",
+      when: item.relativeLabel,
+      rating: item.rating ?? 0,
+    })) ?? [];
+
+  const attendancePattern = buildAttendancePattern(report);
 
   return (
     <RolePageLayout
@@ -179,7 +202,7 @@ export function ReportsScreen() {
       <RefreshableScrollView
         contentContainerStyle={styles.root}
         showsVerticalScrollIndicator={false}
-        onRefresh={async () => {}}
+        onRefresh={load}
       >
         {tab === "performance" ? (
           <>
@@ -187,23 +210,34 @@ export function ReportsScreen() {
               <View style={[styles.card, styles.halfCard]}>
                 <Text style={styles.sectionTitle}>By Priority</Text>
                 <View style={styles.priorityList}>
-                  {PRIORITY_DATA.map((item) => (
-                    <View key={item.label} style={styles.priorityRow}>
-                      <View style={styles.priorityLabelWrap}>
-                        <View style={[styles.priorityDot, { backgroundColor: item.color }]} />
-                        <Text style={styles.priorityLabel}>{item.label}</Text>
-                      </View>
-                      <View style={styles.priorityBarTrack}>
-                        <View
-                          style={[
-                            styles.priorityBarFill,
-                            { width: `${Math.max(item.value, 14)}%`, backgroundColor: item.color },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.priorityValue}>{item.value}</Text>
-                    </View>
-                  ))}
+                  {loading
+                    ? [0, 1, 2, 3].map((item) => (
+                        <View key={item} style={styles.priorityRow}>
+                          <SkeletonBlock style={{ width: 86, height: 14, borderRadius: 7 }} />
+                          <SkeletonBlock style={{ flex: 1, height: 5, borderRadius: 4 }} />
+                          <SkeletonBlock style={{ width: 20, height: 14, borderRadius: 7 }} />
+                        </View>
+                      ))
+                    : priorityData.map((item) => (
+                        <View key={item.label} style={styles.priorityRow}>
+                          <View style={styles.priorityLabelWrap}>
+                            <View style={[styles.priorityDot, { backgroundColor: item.color }]} />
+                            <Text style={styles.priorityLabel}>{item.label}</Text>
+                          </View>
+                          <View style={styles.priorityBarTrack}>
+                            <View
+                              style={[
+                                styles.priorityBarFill,
+                                {
+                                  width: `${Math.max(item.value, 14)}%`,
+                                  backgroundColor: item.color,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <Text style={styles.priorityValue}>{item.value}</Text>
+                        </View>
+                      ))}
                 </View>
               </View>
 
@@ -214,46 +248,57 @@ export function ReportsScreen() {
                     <Text style={styles.sectionTitle}>Attendance Streak</Text>
                   </View>
                 </View>
-                <View style={styles.streakSummaryRow}>
-                  <View style={styles.streakIcon}>
-                    <MaterialCommunityIcons name="fire" size={18} color="#FF7A00" />
-                  </View>
-                  <View>
-                    <Text style={styles.streakValue}>12</Text>
-                    <Text style={styles.streakLabel}>Day Streak</Text>
-                    <Text style={styles.streakMeta}>Personal best: 18 days</Text>
-                  </View>
-                </View>
-                <View style={styles.weekLabelRow}>
-                  {["M", "T", "W", "T", "F", "S", "S"].map((day) => (
-                    <Text key={day} style={styles.weekLabel}>
-                      {day}
-                    </Text>
-                  ))}
-                </View>
-                <View style={styles.heatmap}>
-                  {ATTENDANCE_PATTERN.flatMap((row, rowIndex) =>
-                    row.map((value, colIndex) => (
-                      <View
-                        key={`${rowIndex}-${colIndex}`}
-                        style={[
-                          styles.heatCell,
-                          value ? styles.heatCellPresent : styles.heatCellAbsent,
-                        ]}
-                      />
-                    )),
-                  )}
-                </View>
-                <View style={styles.legendRow}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, styles.heatCellPresent]} />
-                    <Text style={styles.legendText}>Present</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, styles.heatCellAbsent]} />
-                    <Text style={styles.legendText}>Absent</Text>
-                  </View>
-                </View>
+                {loading ? (
+                  <>
+                    <SkeletonBlock style={{ height: 54, borderRadius: 16 }} />
+                    <SkeletonBlock style={{ height: 68, borderRadius: 16 }} />
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.streakSummaryRow}>
+                      <View style={styles.streakIcon}>
+                        <MaterialCommunityIcons name="fire" size={18} color="#FF7A00" />
+                      </View>
+                      <View>
+                        <Text style={styles.streakValue}>{report?.attendance.currentStreakDays ?? 0}</Text>
+                        <Text style={styles.streakLabel}>Day Streak</Text>
+                        <Text style={styles.streakMeta}>
+                          Personal best: {report?.attendance.bestStreakDays ?? 0} days
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.weekLabelRow}>
+                      {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
+                        <Text key={`${day}-${index}`} style={styles.weekLabel}>
+                          {day}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={styles.heatmap}>
+                      {attendancePattern.flatMap((row, rowIndex) =>
+                        row.map((value, colIndex) => (
+                          <View
+                            key={`${rowIndex}-${colIndex}`}
+                            style={[
+                              styles.heatCell,
+                              value ? styles.heatCellPresent : styles.heatCellAbsent,
+                            ]}
+                          />
+                        )),
+                      )}
+                    </View>
+                    <View style={styles.legendRow}>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendDot, styles.heatCellPresent]} />
+                        <Text style={styles.legendText}>Present</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendDot, styles.heatCellAbsent]} />
+                        <Text style={styles.legendText}>Absent</Text>
+                      </View>
+                    </View>
+                  </>
+                )}
               </View>
             </View>
 
@@ -263,22 +308,29 @@ export function ReportsScreen() {
                 <Text style={styles.sectionTitle}>Performance By Zone</Text>
               </View>
               <View style={styles.zoneList}>
-                {PERFORMANCE_ZONES.map((item) => (
-                  <View key={item.zone} style={styles.zoneRow}>
-                    <View style={styles.zoneRowHeader}>
-                      <Text style={styles.zoneName}>{item.zone}</Text>
-                      <Text style={styles.zoneScore}>{item.score}%</Text>
-                    </View>
-                    <View style={styles.zoneTrack}>
-                      <View
-                        style={[
-                          styles.zoneFill,
-                          { width: `${item.score}%`, backgroundColor: item.color },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                ))}
+                {loading
+                  ? [0, 1, 2].map((item) => (
+                      <View key={item} style={styles.zoneRow}>
+                        <SkeletonBlock style={{ height: 14, width: "60%", borderRadius: 7 }} />
+                        <SkeletonBlock style={{ height: 6, borderRadius: 4 }} />
+                      </View>
+                    ))
+                  : zoneData.map((item, index) => (
+                      <View key={`${item.zone}-${index}`} style={styles.zoneRow}>
+                        <View style={styles.zoneRowHeader}>
+                          <Text style={styles.zoneName}>{item.zone}</Text>
+                          <Text style={styles.zoneScore}>{item.score}%</Text>
+                        </View>
+                        <View style={styles.zoneTrack}>
+                          <View
+                            style={[
+                              styles.zoneFill,
+                              { width: `${item.score}%`, backgroundColor: item.color },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
               </View>
             </View>
 
@@ -288,30 +340,40 @@ export function ReportsScreen() {
                 <Text style={styles.sectionTitle}>Checker Feedback - Last 5 Tasks</Text>
               </View>
               <View style={styles.feedbackList}>
-                {FEEDBACK_ITEMS.map((item) => (
-                  <View key={`${item.task}-${item.when}`} style={styles.feedbackRow}>
-                    <View style={styles.feedbackAvatar}>
-                      <Text style={styles.feedbackAvatarText}>{item.initials}</Text>
-                    </View>
-                    <View style={styles.feedbackBody}>
-                      <View style={styles.feedbackTopRow}>
-                        <Text style={styles.feedbackTask}>{item.task}</Text>
-                        <Text style={styles.feedbackWhen}>{item.when}</Text>
+                {loading
+                  ? [0, 1, 2].map((item) => (
+                      <View key={item} style={styles.feedbackRow}>
+                        <SkeletonBlock style={{ width: 38, height: 38, borderRadius: 13 }} />
+                        <View style={styles.feedbackBody}>
+                          <SkeletonBlock style={{ height: 16, width: "70%", borderRadius: 8 }} />
+                          <SkeletonBlock style={{ height: 14, width: "90%", borderRadius: 7 }} />
+                        </View>
                       </View>
-                      <Text style={styles.feedbackNote}>{item.note}</Text>
-                      <View style={styles.ratingRow}>
-                        {Array.from({ length: 5 }).map((_, index) => (
-                          <Ionicons
-                            key={`${item.task}-${index}`}
-                            name={index < item.rating ? "star" : "star-outline"}
-                            size={12}
-                            color={index < item.rating ? "#17C484" : "#D2DAE7"}
-                          />
-                        ))}
+                    ))
+                  : feedbackItems.map((item, index) => (
+                      <View key={`${item.task}-${item.when}-${index}`} style={styles.feedbackRow}>
+                        <View style={styles.feedbackAvatar}>
+                          <Text style={styles.feedbackAvatarText}>{item.initials}</Text>
+                        </View>
+                        <View style={styles.feedbackBody}>
+                          <View style={styles.feedbackTopRow}>
+                            <Text style={styles.feedbackTask}>{item.task}</Text>
+                            <Text style={styles.feedbackWhen}>{item.when}</Text>
+                          </View>
+                          <Text style={styles.feedbackNote}>{item.note}</Text>
+                          <View style={styles.ratingRow}>
+                            {Array.from({ length: 5 }).map((_, index) => (
+                              <Ionicons
+                                key={`${item.task}-${index}`}
+                                name={index < item.rating ? "star" : "star-outline"}
+                                size={12}
+                                color={index < item.rating ? "#17C484" : "#D2DAE7"}
+                              />
+                            ))}
+                          </View>
+                        </View>
                       </View>
-                    </View>
-                  </View>
-                ))}
+                    ))}
               </View>
             </View>
           </>
@@ -338,10 +400,10 @@ export function ReportsScreen() {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Recent Applications</Text>
               <View style={styles.applicationList}>
-                {LEAVE_APPLICATIONS.map((item) => {
+                {LEAVE_APPLICATIONS.map((item, index) => {
                   const status = getStatusStyle(item.tone);
                   return (
-                    <View key={item.title} style={styles.applicationRow}>
+                    <View key={`${item.title}-${index}`} style={styles.applicationRow}>
                       <View>
                         <Text style={styles.applicationTitle}>{item.title}</Text>
                         <Text style={styles.applicationMeta}>{item.meta}</Text>

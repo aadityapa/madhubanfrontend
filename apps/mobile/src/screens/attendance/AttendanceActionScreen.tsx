@@ -1,10 +1,25 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { checkIn, checkOut } from "@madhuban/api";
+import {
+  checkIn,
+  checkOut,
+  submitStaffAttendance,
+  submitSupervisorAttendance,
+} from "@madhuban/api";
 import { colors, font, radii, space } from "@madhuban/theme";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Location from "expo-location";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import {
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../../components/Button";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
@@ -12,6 +27,17 @@ import { useAuth } from "../../context/AuthContext";
 import { getRoleHomePath } from "../../navigation/roleRoutes";
 
 type AttendanceMode = "check-in" | "check-out";
+
+type CapturedSelfie = {
+  uri: string;
+  width?: number;
+  height?: number;
+};
+
+type CoordinatesState = {
+  latitude: number;
+  longitude: number;
+};
 
 function getScreenCopy(mode: AttendanceMode) {
   return {
@@ -29,6 +55,23 @@ function getScreenCopy(mode: AttendanceMode) {
         ? "After uploading selfie check in will be recorded."
         : "After uploading selfie check out will be recorded.",
   };
+}
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 function InfoTile({
@@ -56,24 +99,25 @@ function InfoTile({
 export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
   const insets = useSafeAreaInsets();
   const { role } = useAuth();
+  const isSupervisor = String(role ?? "").trim().toLowerCase() === "supervisor";
+  const isStaff = String(role ?? "").trim().toLowerCase() === "staff";
   const copy = useMemo(() => getScreenCopy(mode), [mode]);
+  const cameraRef = useRef<CameraView | null>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [insideGeofence, setInsideGeofence] = useState(true);
-  const [selfieTaken, setSelfieTaken] = useState(false);
+  const [selfie, setSelfie] = useState<CapturedSelfie | null>(null);
+  const [capturedAt, setCapturedAt] = useState<Date | null>(null);
+  const [coords, setCoords] = useState<CoordinatesState | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [loadingLocation, setLoadingLocation] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const zoneStatusText = insideGeofence ? "GPS ACTIVE" : "OUT OF ZONE";
   const zoneStatusTone = insideGeofence ? styles.zoneStatusActive : styles.zoneStatusAlert;
-  const actionEnabled = insideGeofence && selfieTaken && !confirmed;
-
-  function handleCapture() {
-    if (!insideGeofence) return;
-    setSelfieTaken(true);
-    setConfirmed(false);
-    setStatusMessage(null);
-  }
+  const actionEnabled = insideGeofence && (!!selfie || mode === "check-out") && !!coords && !confirmed;
 
   useEffect(() => {
     return () => {
@@ -81,12 +125,106 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
     };
   }, []);
 
+  async function ensureLocation() {
+    setLoadingLocation(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        throw new Error("Location permission is required for attendance.");
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const nextCoords = {
+        latitude: Number(position.coords.latitude.toFixed(4)),
+        longitude: Number(position.coords.longitude.toFixed(4)),
+      };
+      setCoords(nextCoords);
+      setInsideGeofence(true);
+      return nextCoords;
+    } catch (error) {
+      setInsideGeofence(false);
+      throw error;
+    } finally {
+      setLoadingLocation(false);
+    }
+  }
+
+  async function handleCapture() {
+    if (!insideGeofence && !coords) {
+      try {
+        await ensureLocation();
+      } catch (error) {
+        setStatusMessage(error instanceof Error ? error.message : "Location permission is required.");
+        return;
+      }
+    }
+
+    const permission =
+      cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
+    if (!permission?.granted) {
+      setStatusMessage("Camera permission is required for attendance selfie.");
+      return;
+    }
+
+    setStatusMessage(null);
+    setCameraOpen(true);
+  }
+
+  async function capturePhoto() {
+    if (!cameraRef.current) return;
+    try {
+      const nextCoords = coords ?? (await ensureLocation());
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+      });
+      setCoords(nextCoords);
+      setSelfie({ uri: photo.uri, width: photo.width, height: photo.height });
+      setCapturedAt(new Date());
+      setConfirmed(false);
+      setCameraOpen(false);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unable to capture selfie.");
+    }
+  }
+
   async function handlePrimaryAction() {
     if (!actionEnabled) return;
     setSubmitting(true);
     setStatusMessage(null);
     try {
-      if (mode === "check-in") {
+      const nextCoords = coords ?? (await ensureLocation());
+      if (isSupervisor) {
+        await submitSupervisorAttendance({
+          action: mode === "check-in" ? "check_in" : "check_out",
+          latitude: String(nextCoords.latitude),
+          longitude: String(nextCoords.longitude),
+          selfie:
+            mode === "check-in" && selfie
+              ? {
+                  uri: selfie.uri,
+                  type: "image/jpeg",
+                  name: `attendance-selfie-${Date.now()}.jpg`,
+                }
+              : undefined,
+        });
+      } else if (isStaff) {
+        await submitStaffAttendance({
+          action: mode === "check-in" ? "check_in" : "check_out",
+          latitude: String(nextCoords.latitude),
+          longitude: String(nextCoords.longitude),
+          selfie:
+            mode === "check-in" && selfie
+              ? {
+                  uri: selfie.uri,
+                  type: "image/jpeg",
+                  name: `attendance-selfie-${Date.now()}.jpg`,
+                }
+              : undefined,
+        });
+      } else if (mode === "check-in") {
         await checkIn("Head Office, Shivaji Nagar");
       } else {
         await checkOut();
@@ -105,9 +243,29 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
     }, 1200);
   }
 
+  const previewTime = capturedAt ? formatTime(capturedAt) : "--";
+  const previewDate = capturedAt ? formatDate(capturedAt) : "--";
+  const coordinatesText = coords ? `${coords.latitude} N, ${coords.longitude} E` : "Location pending";
+
   return (
     <View style={styles.screen}>
       <StatusBar style="dark" />
+
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraScreen}>
+          <CameraView ref={cameraRef} facing="front" style={styles.cameraView} />
+          <View style={[styles.cameraHeader, { paddingTop: insets.top + 12 }]}>
+            <Pressable style={styles.cameraBackButton} onPress={() => setCameraOpen(false)}>
+              <Feather name="x" size={20} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          <View style={[styles.cameraFooter, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+            <Pressable style={styles.captureButtonOuter} onPress={capturePhoto}>
+              <View style={styles.captureButtonInner} />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerRow}>
@@ -121,8 +279,18 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
           </View>
 
           <View style={[styles.zoneBadge, zoneStatusTone]}>
-            <View style={[styles.zoneBadgeDot, insideGeofence ? styles.zoneDotActive : styles.zoneDotAlert]} />
-            <Text style={[styles.zoneBadgeText, insideGeofence ? styles.zoneBadgeTextActive : styles.zoneBadgeTextAlert]}>
+            <View
+              style={[
+                styles.zoneBadgeDot,
+                insideGeofence ? styles.zoneDotActive : styles.zoneDotAlert,
+              ]}
+            />
+            <Text
+              style={[
+                styles.zoneBadgeText,
+                insideGeofence ? styles.zoneBadgeTextActive : styles.zoneBadgeTextAlert,
+              ]}
+            >
               {zoneStatusText}
             </Text>
           </View>
@@ -133,7 +301,9 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        onRefresh={async () => {}}
+        onRefresh={async () => {
+          await ensureLocation();
+        }}
       >
         {!insideGeofence ? (
           <View style={styles.alertCard}>
@@ -149,18 +319,23 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
           </View>
         ) : null}
 
-        <Pressable style={[styles.selfieCard, selfieTaken && styles.selfieCardCaptured]} onPress={handleCapture}>
-          {selfieTaken ? (
+        <Pressable
+          style={[styles.selfieCard, selfie && styles.selfieCardCaptured]}
+          onPress={mode === "check-in" ? handleCapture : () => void ensureLocation().catch(() => {})}
+        >
+          {selfie ? (
             <View style={[styles.selfiePreview, confirmed && styles.selfiePreviewConfirmed]}>
+              <Image source={{ uri: selfie.uri }} style={styles.selfieImage} />
+              <View style={styles.selfieShade} />
               <View style={styles.selfieOverlayTop}>
-                <Text style={styles.selfieLocation}>Vikram Monarch, Pune - 18.5592 N, 73.8098 E</Text>
+                <Text style={styles.selfieLocation}>Current Coordinates - {coordinatesText}</Text>
               </View>
               <View style={styles.selfieFaceBadge}>
-                <Text style={styles.selfieFaceText}>RK</Text>
+                <Ionicons name="camera" size={28} color="#FFFFFF" />
               </View>
               <View style={styles.selfieOverlayBottom}>
                 <Ionicons name="time-outline" size={12} color="#FFFFFF" />
-                <Text style={styles.selfieTime}>06:01 pm</Text>
+                <Text style={styles.selfieTime}>{previewTime}</Text>
               </View>
               {confirmed ? (
                 <View style={styles.selfieConfirmedBadge}>
@@ -171,24 +346,36 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
           ) : (
             <View style={styles.selfiePlaceholder}>
               <View style={styles.selfiePlaceholderIcon}>
-                <Ionicons name="cloud-upload-outline" size={24} color="#94A3B8" />
+                <Ionicons
+                  name={mode === "check-in" ? "camera-outline" : "locate-outline"}
+                  size={24}
+                  color="#94A3B8"
+                />
               </View>
-              <Text style={styles.selfiePlaceholderTitle}>Tap to Take Selfie</Text>
+              <Text style={styles.selfiePlaceholderTitle}>
+                {mode === "check-in" ? "Tap to Take Selfie" : "Tap to Refresh GPS"}
+              </Text>
               <Text style={styles.selfiePlaceholderText}>
-                {insideGeofence ? "Face must be clearly visible" : `GPS outside zone - ${mode} blocked`}
+                {mode === "check-in"
+                  ? insideGeofence
+                    ? "Face must be clearly visible"
+                    : `GPS outside zone - ${mode} blocked`
+                  : loadingLocation
+                    ? "Refreshing current coordinates..."
+                    : "Check-out uses live GPS coordinates"}
               </Text>
             </View>
           )}
         </Pressable>
 
-        {selfieTaken ? (
+        {(selfie || coords) ? (
           <View style={styles.detailCard}>
             <View style={styles.detailRow}>
               <View style={styles.detailIconWrap}>
                 <Ionicons name="location-outline" size={15} color="#FF5B5B" />
               </View>
               <View>
-                <Text style={styles.detailValue}>Rahul Dhumal, Pune</Text>
+                <Text style={styles.detailValue}>{coordinatesText}</Text>
                 <Text style={styles.detailLabel}>Co-Ordinates.</Text>
               </View>
             </View>
@@ -198,7 +385,7 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
                 <Ionicons name="time-outline" size={15} color="#FF8A00" />
               </View>
               <View>
-                <Text style={styles.detailValue}>06:01 pm</Text>
+                <Text style={styles.detailValue}>{previewTime}</Text>
                 <Text style={styles.detailLabel}>{copy.timeLabel}</Text>
               </View>
             </View>
@@ -208,7 +395,7 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
                 <Ionicons name="calendar-outline" size={15} color="#4F7CFF" />
               </View>
               <View>
-                <Text style={styles.detailValue}>Thursday, 19 March 2026</Text>
+                <Text style={styles.detailValue}>{previewDate}</Text>
                 <Text style={styles.detailLabel}>{copy.dateLabel}</Text>
               </View>
             </View>
@@ -220,18 +407,38 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
             <Text style={styles.premisesTitle}>
               {insideGeofence ? "You are in premises" : "You are outside premises"}
             </Text>
-            <Text style={styles.premisesSubtitle}>Vikram Monarch, Shivaji Nagar</Text>
+            <Text style={styles.premisesSubtitle}>Current attendance location</Text>
           </View>
-          <View style={[styles.zoneBadge, insideGeofence ? styles.zoneStatusActive : styles.zoneStatusAlert]}>
-            <View style={[styles.zoneBadgeDot, insideGeofence ? styles.zoneDotActive : styles.zoneDotAlert]} />
-            <Text style={[styles.zoneBadgeText, insideGeofence ? styles.zoneBadgeTextActive : styles.zoneBadgeTextAlert]}>
+          <View
+            style={[
+              styles.zoneBadge,
+              insideGeofence ? styles.zoneStatusActive : styles.zoneStatusAlert,
+            ]}
+          >
+            <View
+              style={[
+                styles.zoneBadgeDot,
+                insideGeofence ? styles.zoneDotActive : styles.zoneDotAlert,
+              ]}
+            />
+            <Text
+              style={[
+                styles.zoneBadgeText,
+                insideGeofence ? styles.zoneBadgeTextActive : styles.zoneBadgeTextAlert,
+              ]}
+            >
               {insideGeofence ? "GPS Active" : "GPS Alert"}
             </Text>
           </View>
         </View>
 
         <View style={styles.tileGrid}>
-          <InfoTile icon="location-outline" iconColor="#FF5B5B" title="Head Office" subtitle="Current Location" />
+          <InfoTile
+            icon="location-outline"
+            iconColor="#FF5B5B"
+            title="Current Location"
+            subtitle={coordinatesText}
+          />
           <InfoTile
             icon="locate-outline"
             iconColor={insideGeofence ? "#0F9F6E" : "#FF5B5B"}
@@ -239,7 +446,12 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
             subtitle="Geofence Status"
           />
           <InfoTile icon="sunny-outline" iconColor="#FF9F1A" title="Day Shift" subtitle="8:00 AM - 5:00 PM" />
-          <InfoTile icon="clipboard-outline" iconColor="#4F7CFF" title="27 Tasks" subtitle="Assigned Today" />
+          <InfoTile
+            icon="camera-outline"
+            iconColor="#4F7CFF"
+            title={mode === "check-in" ? "Selfie Required" : "GPS Required"}
+            subtitle={mode === "check-in" ? "Capture before submit" : "Live coordinates on submit"}
+          />
         </View>
 
         <View style={styles.demoRow}>
@@ -263,14 +475,16 @@ export function AttendanceActionScreen({ mode }: { mode: AttendanceMode }) {
               ? copy.confirmedAction
               : submitting
                 ? "Submitting..."
-              : insideGeofence
-                ? selfieTaken
-                  ? copy.primaryAction
-                  : "Take Selfie First"
-                : "Outside Geo-fence"
+                : loadingLocation
+                  ? "Fetching GPS..."
+                  : mode === "check-in"
+                    ? selfie
+                      ? copy.primaryAction
+                      : "Take Selfie First"
+                    : copy.primaryAction
           }
           onPress={handlePrimaryAction}
-          disabled={submitting || (!actionEnabled && !confirmed)}
+          disabled={submitting || loadingLocation || (!actionEnabled && !confirmed)}
           variant={confirmed ? "success" : "primary"}
         />
 
@@ -286,6 +500,51 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  cameraScreen: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+  cameraView: {
+    flex: 1,
+  },
+  cameraHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    alignItems: "flex-end",
+  },
+  cameraBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,23,42,0.42)",
+  },
+  cameraFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+  },
+  captureButtonOuter: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 5,
+    borderColor: "rgba(255,255,255,0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureButtonInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: "#FFFFFF",
   },
   header: {
     paddingHorizontal: space.md,
@@ -435,12 +694,22 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: font.family.medium,
     fontSize: 12,
+    textAlign: "center",
   },
   selfiePreview: {
     minHeight: 200,
     padding: 14,
     justifyContent: "space-between",
     backgroundColor: "#334155",
+  },
+  selfieImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  selfieShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.28)",
   },
   selfiePreviewConfirmed: {
     backgroundColor: "#0F9F6E",
@@ -467,11 +736,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.16)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.24)",
-  },
-  selfieFaceText: {
-    color: "#FFFFFF",
-    fontFamily: font.family.black,
-    fontSize: 34,
   },
   selfieOverlayBottom: {
     flexDirection: "row",
