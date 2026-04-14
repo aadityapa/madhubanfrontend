@@ -302,6 +302,28 @@ export interface SupervisorReviewDecisionPayload {
   rating?: number;
 }
 
+async function appendUploadableFile(
+  formData: FormData,
+  fieldName: string,
+  file: UploadableFile,
+): Promise<void> {
+  if (
+    file &&
+    typeof file === "object" &&
+    "uri" in file &&
+    typeof file.uri === "string"
+  ) {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    formData.append(fieldName, blob, file.name);
+    return;
+  }
+
+  (formData as unknown as {
+    append(name: string, value: UploadableFile): void;
+  }).append(fieldName, file);
+}
+
 export async function getSupervisorDashboard(date?: string): Promise<SupervisorDashboardResponse> {
   const res = await fetch(withOptionalDate(`${API()}/supervisor/dashboard`, date), {
     headers: getAuthHeaders(),
@@ -326,9 +348,7 @@ export async function submitSupervisorAttendance(
   formData.append("latitude", String(payload.latitude));
   formData.append("longitude", String(payload.longitude));
   if (payload.selfie) {
-    (formData as unknown as {
-      append(name: string, value: UploadableFile): void;
-    }).append("selfie", payload.selfie);
+    await appendUploadableFile(formData, "selfie", payload.selfie);
   }
 
   const headers = getAuthHeaders();

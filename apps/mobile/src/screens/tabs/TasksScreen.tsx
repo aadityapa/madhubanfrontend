@@ -41,6 +41,8 @@ interface TaskItem {
   status: string;
   approvalStatus?: string | null;
   decisionNote?: string | null;
+  beforePhotoUrl?: string | null;
+  afterPhotoUrl?: string | null;
   isCompleted: boolean;
 }
 
@@ -91,6 +93,14 @@ function formatTime(value: string | null | undefined) {
 }
 
 function mapTask(item: StaffTasksResponse["tasks"][number]): TaskItem {
+  const raw = item as StaffTasksResponse["tasks"][number] & {
+    beforePhotoUrl?: string | null;
+    afterPhotoUrl?: string | null;
+    photos?: {
+      beforePhotoUrl?: string | null;
+      afterPhotoUrl?: string | null;
+    } | null;
+  };
   const locationParts = [item.location.propertyName, item.location.floorNo ? `Floor ${item.location.floorNo}` : null].filter(Boolean);
   return {
     id: String(item.id),
@@ -103,6 +113,8 @@ function mapTask(item: StaffTasksResponse["tasks"][number]): TaskItem {
     status: item.status,
     approvalStatus: item.approval?.status ?? null,
     decisionNote: item.approval?.decisionNote ?? null,
+    beforePhotoUrl: raw.beforePhotoUrl ?? raw.photos?.beforePhotoUrl ?? null,
+    afterPhotoUrl: raw.afterPhotoUrl ?? raw.photos?.afterPhotoUrl ?? null,
     isCompleted: item.status === "COMPLETED",
   };
 }
@@ -405,28 +417,74 @@ export function TasksScreen() {
   }, [filter, load]);
 
   useEffect(() => {
-    setStep("detail");
-    setBeforeUri(null);
-    setAfterUri(null);
+    setStep(
+      selectedTask?.afterPhotoUrl
+        ? "after"
+        : selectedTask?.beforePhotoUrl
+          ? "after"
+          : "detail",
+    );
+    setBeforeUri(selectedTask?.beforePhotoUrl ?? null);
+    setAfterUri(selectedTask?.afterPhotoUrl ?? null);
     setCaptureTarget(null);
     setCameraOpen(false);
     setSubmitting(false);
   }, [selectedTask?.id]);
 
   async function handleBeforeUpload(task: TaskItem, photoUri: string) {
-    await uploadStaffTaskBeforePhoto(task.id, {
+    const result = await uploadStaffTaskBeforePhoto(task.id, {
       uri: photoUri,
       type: "image/jpeg",
       name: `before-${task.id}-${Date.now()}.jpg`,
     });
+    const beforePhotoUrl = result.beforePhotoUrl ?? photoUri;
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              beforePhotoUrl,
+            }
+          : item,
+      ),
+    );
+    setSelectedTask((current) =>
+      current && current.id === task.id
+        ? {
+            ...current,
+            beforePhotoUrl,
+          }
+        : current,
+    );
+    setBeforeUri(beforePhotoUrl);
   }
 
   async function handleAfterUpload(task: TaskItem, photoUri: string) {
-    await uploadStaffTaskAfterPhoto(task.id, {
+    const result = await uploadStaffTaskAfterPhoto(task.id, {
       uri: photoUri,
       type: "image/jpeg",
       name: `after-${task.id}-${Date.now()}.jpg`,
     });
+    const afterPhotoUrl = result.afterPhotoUrl ?? photoUri;
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              afterPhotoUrl,
+            }
+          : item,
+      ),
+    );
+    setSelectedTask((current) =>
+      current && current.id === task.id
+        ? {
+            ...current,
+            afterPhotoUrl,
+          }
+        : current,
+    );
+    setAfterUri(afterPhotoUrl);
     await load(filter);
   }
 

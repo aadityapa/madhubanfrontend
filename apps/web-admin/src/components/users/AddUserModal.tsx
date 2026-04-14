@@ -1,30 +1,43 @@
-import { X } from "lucide-react";
+import { Eye, EyeOff, X } from "lucide-react";
 import { useState } from "react";
 import { ROLES, STATUSES, type User, type UserRole, type UserStatus } from "./types";
 import {
+  getAlphabeticError,
+  getConfirmPasswordError,
   getEmailError,
   getIndianMobileError,
+  getPasswordError,
   getRequiredError,
+  sanitizeAlphabetic,
+  sanitizeDigits,
   validationStyles,
 } from "../../utils/validation";
 
 interface AddUserForm {
   fullName: string;
   email: string;
+  password: string;
+  confirmPassword: string;
   phone: string;
   role: UserRole | "";
   status: UserStatus;
   department: string;
+  managerId: string;
+  supervisorId: string;
   localities: string;
 }
 
 const EMPTY: AddUserForm = {
   fullName: "",
   email: "",
+  password: "",
+  confirmPassword: "",
   phone: "",
   role: "",
   status: "Active",
   department: "",
+  managerId: "",
+  supervisorId: "",
   localities: "",
 };
 
@@ -32,15 +45,21 @@ const AVATAR_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#
 
 export function AddUserModal({
   totalCount,
+  managers,
+  supervisors,
   onClose,
   onSave,
 }: {
   totalCount: number;
+  managers: Array<{ id: string; name: string }>;
+  supervisors: Array<{ id: string; name: string }>;
   onClose: () => void;
   onSave: (u: User) => void;
 }) {
   const [form, setForm] = useState<AddUserForm>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof AddUserForm, string>>>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   function update(k: keyof AddUserForm, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -49,10 +68,30 @@ export function AddUserModal({
 
   function validate(next: AddUserForm) {
     const nextErrors: Partial<Record<keyof AddUserForm, string>> = {
-      fullName: getRequiredError(next.fullName, "Please enter the user's full name.") ?? undefined,
+      fullName: getAlphabeticError(next.fullName, "Please enter the user's full name.") ?? undefined,
       email: getEmailError(next.email) ?? undefined,
+      password: getPasswordError(next.password, "Please enter a password.") ?? undefined,
+      confirmPassword: getConfirmPasswordError(next.password, next.confirmPassword) ?? undefined,
       role: getRequiredError(next.role, "Please select a system role.") ?? undefined,
     };
+    if (String(next.department || "").trim()) {
+      nextErrors.department = getAlphabeticError(
+        next.department,
+        "Please enter the department name.",
+      ) ?? undefined;
+    }
+    if (next.role === "Supervisor") {
+      nextErrors.managerId = getRequiredError(
+        next.managerId,
+        "Please select a manager for this supervisor.",
+      ) ?? undefined;
+    }
+    if (next.role === "Staff") {
+      nextErrors.supervisorId = getRequiredError(
+        next.supervisorId,
+        "Please select a supervisor for this staff member.",
+      ) ?? undefined;
+    }
 
     if (String(next.phone || "").trim()) {
       nextErrors.phone = getIndianMobileError(next.phone) ?? undefined;
@@ -76,10 +115,16 @@ export function AddUserModal({
       apiId: "",
       name: form.fullName.trim(),
       email: form.email.trim(),
+      password: form.password,
+      confirmPassword: form.confirmPassword,
       phone: form.phone.trim(),
       role: form.role as UserRole,
       status: form.status,
       department: form.department.trim(),
+      managerId: form.managerId || undefined,
+      managerName: managers.find((item) => item.id === form.managerId)?.name,
+      supervisorId: form.supervisorId || undefined,
+      supervisorName: supervisors.find((item) => item.id === form.supervisorId)?.name,
       lastLogin: "Just now",
       initials,
       avatarColor: AVATAR_COLORS[totalCount % AVATAR_COLORS.length],
@@ -108,7 +153,8 @@ export function AddUserModal({
                 style={{ ...as.input, ...(errors.fullName ? validationStyles.inputErrorBorder : null) }}
                 placeholder="e.g. Robert Fox"
                 value={form.fullName}
-                onChange={(e) => update("fullName", e.target.value)}
+                maxLength={50}
+                onChange={(e) => update("fullName", sanitizeAlphabetic(e.target.value))}
               />
             </Field>
             <div style={as.row2}>
@@ -121,12 +167,54 @@ export function AddUserModal({
                   onChange={(e) => update("email", e.target.value)}
                 />
               </Field>
+              <Field label="Password *" error={errors.password}>
+                <div style={as.passwordWrap}>
+                  <input
+                    style={{ ...as.input, ...as.passwordInput, ...(errors.password ? validationStyles.inputErrorBorder : null) }}
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter a password"
+                    value={form.password}
+                    onChange={(e) => update("password", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    style={as.passwordToggle}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    onClick={() => setShowPassword((current) => !current)}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </Field>
+            </div>
+            <div style={as.row2}>
+              <Field label="Confirm Password *" error={errors.confirmPassword}>
+                <div style={as.passwordWrap}>
+                  <input
+                    style={{ ...as.input, ...as.passwordInput, ...(errors.confirmPassword ? validationStyles.inputErrorBorder : null) }}
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm password"
+                    value={form.confirmPassword}
+                    onChange={(e) => update("confirmPassword", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    style={as.passwordToggle}
+                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                    onClick={() => setShowConfirmPassword((current) => !current)}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </Field>
               <Field label="Phone Number" error={errors.phone}>
                 <input
                   style={{ ...as.input, ...(errors.phone ? validationStyles.inputErrorBorder : null) }}
                   placeholder="9876543210"
                   value={form.phone}
-                  onChange={(e) => update("phone", e.target.value)}
+                  inputMode="numeric"
+                  maxLength={10}
+                  onChange={(e) => update("phone", sanitizeDigits(e.target.value).slice(0, 10))}
                 />
               </Field>
             </div>
@@ -162,16 +250,49 @@ export function AddUserModal({
                 </select>
               </Field>
             </div>
+            {form.role === "Supervisor" ? (
+              <Field label="Assigned Manager *" error={errors.managerId}>
+                <select
+                  style={{ ...as.input, ...(errors.managerId ? validationStyles.inputErrorBorder : null) }}
+                  value={form.managerId}
+                  onChange={(e) => update("managerId", e.target.value)}
+                >
+                  <option value="">Select a manager</option>
+                  {managers.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {form.role === "Staff" ? (
+              <Field label="Assigned Supervisor *" error={errors.supervisorId}>
+                <select
+                  style={{ ...as.input, ...(errors.supervisorId ? validationStyles.inputErrorBorder : null) }}
+                  value={form.supervisorId}
+                  onChange={(e) => update("supervisorId", e.target.value)}
+                >
+                  <option value="">Select a supervisor</option>
+                  {supervisors.map((supervisor) => (
+                    <option key={supervisor.id} value={supervisor.id}>
+                      {supervisor.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
             <p style={as.hint}>User will receive an email invitation to set their initial password.</p>
           </Section>
 
           <Section icon="Facility" label="Facility Assignment">
             <Field label="Primary Department">
               <input
-                style={as.input}
+                style={{ ...as.input, ...(errors.department ? validationStyles.inputErrorBorder : null) }}
                 placeholder="e.g. Maintenance, Operations"
                 value={form.department}
-                onChange={(e) => update("department", e.target.value)}
+                maxLength={40}
+                onChange={(e) => update("department", sanitizeAlphabetic(e.target.value))}
               />
             </Field>
             <Field label="Assigned Localities / Facilities">
@@ -306,6 +427,26 @@ const as: Record<string, React.CSSProperties> = {
     background: "var(--c-input-bg)",
     width: "100%",
     boxSizing: "border-box" as const,
+  },
+  passwordWrap: {
+    position: "relative",
+  },
+  passwordInput: {
+    paddingRight: 40,
+  },
+  passwordToggle: {
+    position: "absolute",
+    top: "50%",
+    right: 10,
+    transform: "translateY(-50%)",
+    border: "none",
+    background: "transparent",
+    color: "var(--c-text-muted)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    padding: 0,
   },
   hint: { margin: 0, fontSize: 12, color: "var(--c-text-faint)" },
   actions: {

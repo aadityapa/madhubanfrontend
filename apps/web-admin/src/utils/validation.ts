@@ -5,6 +5,10 @@ export const validationMessages = {
   mobileLength: "Please enter a valid 10-digit mobile number.",
   emailRequired: "Please enter your email address.",
   emailInvalid: "Please enter a valid email address.",
+  alphabeticOnly: "Only alphabets and spaces are allowed.",
+  passwordMinLength: "Password must be at least 8 characters.",
+  confirmPasswordRequired: "Please confirm the password.",
+  confirmPasswordMismatch: "Passwords do not match.",
 } as const;
 
 export const validationStyles = {
@@ -21,6 +25,12 @@ export const validationStyles = {
 
 export function sanitizeDigits(input: string) {
   return String(input || "").replace(/\D/g, "");
+}
+
+export function sanitizeAlphabetic(input: string) {
+  return String(input || "")
+    .replace(/[^a-zA-Z\s]/g, "")
+    .replace(/\s{2,}/g, " ");
 }
 
 export function isValidIndianMobile(digits: string) {
@@ -47,5 +57,25 @@ export function getEmailError(rawValue: string, requiredMessage?: string) {
   const value = String(rawValue || "").trim();
   if (!value) return requiredMessage ?? validationMessages.emailRequired;
   if (!isValidEmail(value)) return validationMessages.emailInvalid;
+  return null;
+}
+
+export function getAlphabeticError(rawValue: string, requiredMessage?: string) {
+  const value = String(rawValue || "").trim();
+  if (!value) return requiredMessage ?? validationMessages.required;
+  if (!/^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(value)) return validationMessages.alphabeticOnly;
+  return null;
+}
+
+export function getPasswordError(rawValue: string, requiredMessage?: string) {
+  const value = String(rawValue || "");
+  if (!value.trim()) return requiredMessage ?? validationMessages.required;
+  if (value.length < 8) return validationMessages.passwordMinLength;
+  return null;
+}
+
+export function getConfirmPasswordError(password: string, confirmPassword: string) {
+  if (!String(confirmPassword || "").trim()) return validationMessages.confirmPasswordRequired;
+  if (password !== confirmPassword) return validationMessages.confirmPasswordMismatch;
   return null;
 }

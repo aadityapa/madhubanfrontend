@@ -1,12 +1,9 @@
 {
   "expo": {
-    "extra": {
-      "eas": {
-        "projectId": "459a1c35-1be2-49eb-a320-bb17fece5e5e"
-      }
-    },
+    "owner": "nexyyra",
+    "extra": {},
     "android": {
-      "package": "com.itx2026.madhuban360"
+      "package": "com.madhuban360.app"
     }
   }
 }

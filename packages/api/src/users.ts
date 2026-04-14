@@ -16,9 +16,13 @@ export interface AdminUserRecord {
   name: string;
   email: string;
   role: string;
+  phone?: string;
+  status?: string;
+  department?: string;
   manager?: UserRelation | null;
   supervisor?: UserRelation | null;
   createdAt?: string;
+  updatedAt?: string;
   [key: string]: unknown;
 }
 
@@ -69,9 +73,13 @@ function mapUser(raw: Record<string, unknown>): AdminUserRecord {
     name: String(raw.name ?? ""),
     email: String(raw.email ?? ""),
     role: String(raw.role ?? ""),
+    phone: raw.phone == null ? undefined : String(raw.phone),
+    status: raw.status == null ? undefined : String(raw.status),
+    department: raw.department == null ? undefined : String(raw.department),
     manager: mapRelation(raw.manager),
     supervisor: mapRelation(raw.supervisor),
     createdAt: raw.createdAt == null ? undefined : String(raw.createdAt),
+    updatedAt: raw.updatedAt == null ? undefined : String(raw.updatedAt),
   };
 }
 
@@ -173,9 +181,11 @@ export async function getUsersForAssignee(): Promise<Record<string, unknown>[]> 
 }
 
 export async function getUserById(id: string): Promise<Record<string, unknown> | null> {
-  const response = await getUsers({ page: 1, limit: 100 });
-  const match = response.data.find((user) => String(user.id) === id);
-  return match ?? null;
+  const res = await fetch(`${API_BASE()}/${id}`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = unwrapApiData<Record<string, unknown>>(await readJsonOrThrow(res));
+  return mapUser(payload);
 }
 
 export async function createUser(data: Record<string, unknown>): Promise<unknown> {
@@ -189,7 +199,7 @@ export async function createUser(data: Record<string, unknown>): Promise<unknown
 
 export async function updateUser(id: string, data: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`${API_BASE()}/${id}`, {
-    method: "PUT",
+    method: "PATCH",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });

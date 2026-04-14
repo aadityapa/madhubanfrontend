@@ -14,13 +14,13 @@ import {
   Moon,
   Search,
   ShoppingCart,
-  Sparkles,
   Sun,
   Users,
   Wrench,
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useShellHeaderValue } from "../context/ShellHeaderContext";
+import { useToast } from "../context/ToastContext";
 import { useTheme } from "../context/ThemeContext";
 import "./admin-shell.css";
 
@@ -71,6 +71,27 @@ function SidebarLink({
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function Sidebar() {
   const navigate = useNavigate();
+  const rawUser = localStorage.getItem("user");
+  let user: Record<string, unknown> | null = null;
+  try {
+    user = rawUser ? (JSON.parse(rawUser) as Record<string, unknown>) : null;
+  } catch {
+    user = null;
+  }
+  const name = String(user?.name ?? user?.full_name ?? "Administrator");
+  const role = String(user?.role ?? "Admin")
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "AD";
 
   function handleLogout() {
     localStorage.removeItem("token");
@@ -98,10 +119,10 @@ function Sidebar() {
       </nav>
 
       <div className="shell-sidebar__profile">
-        <div className="shell-sidebar__avatar">HS</div>
+        <div className="shell-sidebar__avatar">{initials}</div>
         <div className="shell-sidebar__profile-info">
-          <span className="shell-sidebar__profile-name">Harish Sawant</span>
-          <span className="shell-sidebar__profile-role">Head Administrator</span>
+          <span className="shell-sidebar__profile-name">{name}</span>
+          <span className="shell-sidebar__profile-role">{role}</span>
         </div>
         <button className="shell-sidebar__logout" title="Log out" onClick={handleLogout}>
           <LogOut size={16} />
@@ -115,6 +136,11 @@ function Sidebar() {
 function TopBar() {
   const { title, badge, actions, showSearch } = useShellHeaderValue();
   const { isDark, toggle } = useTheme();
+  const { showToast } = useToast();
+
+  function showComingSoon(label: string) {
+    showToast("info", label, "Coming soon");
+  }
 
   return (
     <header className="shell-topbar">
@@ -150,19 +176,20 @@ function TopBar() {
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>
 
-        <button className="shell-topbar__icon-btn" title="AI Assistant">
-          <Sparkles size={17} />
-        </button>
-
         <button
           className="shell-topbar__icon-btn shell-topbar__icon-btn--notify"
           title="Notifications"
+          onClick={() => showComingSoon("Notifications")}
         >
           <Bell size={17} />
           <span className="shell-topbar__notify-dot" />
         </button>
 
-        <button className="shell-topbar__icon-btn" title="Help">
+        <button
+          className="shell-topbar__icon-btn"
+          title="Help"
+          onClick={() => showComingSoon("Help")}
+        >
           <CircleHelp size={17} />
         </button>
       </div>

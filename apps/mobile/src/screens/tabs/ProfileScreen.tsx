@@ -354,8 +354,12 @@ export function ProfileScreen() {
             <View style={styles.statsRow}>
               {stats.map((item, index) => (
                 <View key={`${item.label}-${index}`} style={styles.statCell}>
-                  <Text style={styles.statValue}>{item.value}</Text>
-                  <Text style={styles.statLabel}>{item.label}</Text>
+                  <Text style={isManager ? styles.statValueCompact : styles.statValue}>
+                    {item.value}
+                  </Text>
+                  <Text style={isManager ? styles.statLabelCompact : styles.statLabel}>
+                    {item.label}
+                  </Text>
                 </View>
               ))}
             </View>

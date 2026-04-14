@@ -53,10 +53,11 @@
     ],
     "extra": {
       "router": {},
+      "apiBaseUrl": "",
       "eas": {
-        "projectId": "14e8c001-0548-44cb-a6c1-969ba0c3510d"
+        "projectId": "2c5b09a0-ba52-44ec-8437-5d6131b62603"
       }
     },
-    "owner": "developer8989"
+    "owner": "nexyyra"
   }
 }

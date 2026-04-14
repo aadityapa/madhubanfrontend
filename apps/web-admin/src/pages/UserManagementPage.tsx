@@ -24,7 +24,18 @@ import {
 } from "../components/users/types";
 import { useShellHeader } from "../context/ShellHeaderContext";
 import { useToast } from "../context/ToastContext";
-import { createUser, deleteUser, getUsers, updateUser } from "@madhuban/api";
+import {
+  createUser,
+  deleteUser,
+  getManagers,
+  getRoles,
+  getSupervisors,
+  getUsers,
+  updateUser,
+  type ManagerRecord,
+  type RoleRecord,
+  type SupervisorRecord,
+} from "@madhuban/api";
 import { useEffect } from "react";
 import {
   SkeletonTableRows,
@@ -89,6 +100,9 @@ const PAGE_SIZE = 5;
 
 export function UserManagementPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [managers, setManagers] = useState<ManagerRecord[]>([]);
+  const [supervisors, setSupervisors] = useState<SupervisorRecord[]>([]);
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [roleFilter, setRoleFilter] = useState<UserRole | "">("");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "">("");
   const [search, setSearch] = useState("");
@@ -99,11 +113,32 @@ export function UserManagementPage() {
 
   const AVATAR_COLORS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#8b5cf6","#ec4899","#2563eb","#64748b"];
 
+  function toUserRole(value: string): UserRole {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "admin") return "Admin";
+    if (normalized === "manager") return "Manager";
+    if (normalized === "supervisor") return "Supervisor";
+    return "Staff";
+  }
+
+  function toUserStatus(value: unknown): UserStatus {
+    const normalized = String(value ?? "Active").trim().toLowerCase();
+    if (normalized === "suspended") return "Suspended";
+    if (normalized === "inactive") return "Inactive";
+    return "Active";
+  }
+
   function toUser(raw: Record<string, unknown>, idx: number): User {
     const name = String(raw.name ?? raw.fullName ?? raw.username ?? raw.email ?? "—");
     const email = String(raw.email ?? "—");
-    const role = String(raw.role ?? "Staff");
-    const status = String(raw.status ?? "Active");
+    const role = toUserRole(String(raw.role ?? "Staff"));
+    const status = toUserStatus(raw.status);
+    const manager =
+      raw.manager && typeof raw.manager === "object" ? (raw.manager as Record<string, unknown>) : null;
+    const supervisor =
+      raw.supervisor && typeof raw.supervisor === "object"
+        ? (raw.supervisor as Record<string, unknown>)
+        : null;
     const initials = name
       .split(" ")
       .filter(Boolean)
@@ -118,12 +153,21 @@ export function UserManagementPage() {
       email,
       phone: raw.phone ? String(raw.phone) : undefined,
       jobTitle: raw.jobTitle ? String(raw.jobTitle) : undefined,
-      role: (role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()) as UserRole,
-      status: (status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()) as UserStatus,
+      role,
+      status,
       lastLogin: String(raw.lastLogin ?? raw.lastLoginAt ?? "-"),
       initials: initials || "U",
       avatarColor: AVATAR_COLORS[idx % AVATAR_COLORS.length],
       department: raw.department ? String(raw.department) : undefined,
+      managerId: manager?.id != null ? String(manager.id) : undefined,
+      managerName: manager?.name ? String(manager.name) : undefined,
+      supervisorId: supervisor?.id != null ? String(supervisor.id) : undefined,
+      supervisorName: supervisor?.name ? String(supervisor.name) : undefined,
+      reportsTo: supervisor?.name
+        ? String(supervisor.name)
+        : manager?.name
+          ? String(manager.name)
+          : undefined,
       facilities: Array.isArray(raw.facilities) ? (raw.facilities as string[]) : undefined,
     };
   }
@@ -133,8 +177,7 @@ export function UserManagementPage() {
       setLoading(true);
       const response = await getUsers({ page: 1, limit: 100 });
       const list = response.data as Record<string, unknown>[];
-      if (!Array.isArray(list) || list.length === 0) return;
-      setUsers(list.map(toUser));
+      setUsers(Array.isArray(list) ? list.map(toUser) : []);
     } catch (e) {
       console.error(e);
       showToast("error", "Failed to load users", e instanceof Error ? e.message : "Please try again.");
@@ -146,6 +189,28 @@ export function UserManagementPage() {
   useEffect(() => {
     void refreshUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [managerList, supervisorList, roleList] = await Promise.all([
+          getManagers(),
+          getSupervisors(),
+          getRoles(),
+        ]);
+        if (!active) return;
+        setManagers(managerList);
+        setSupervisors(supervisorList);
+        setRoles(roleList);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useShellHeader({
@@ -173,14 +238,24 @@ export function UserManagementPage() {
 
   async function handleAdd(u: User) {
     try {
+      const roleId = roles.find(
+        (item) => item.name.trim().toLowerCase() === u.role.trim().toLowerCase(),
+      )?.id;
+      if (!roleId) {
+        showToast("error", "Failed to create user", "Unable to resolve the selected role.");
+        return;
+      }
       await createUser({
         name: u.name,
         email: u.email,
+        password: u.password,
+        confirmPassword: u.confirmPassword,
         phone: u.phone,
-        role: u.role,
+        roleId,
         status: u.status,
-        jobTitle: u.jobTitle,
         department: u.department,
+        ...(u.role === "Supervisor" && u.managerId ? { managerId: Number(u.managerId) } : {}),
+        ...(u.role === "Staff" && u.supervisorId ? { supervisorId: Number(u.supervisorId) } : {}),
       });
       await refreshUsers();
       showToast("success", "User Added!", `${u.name} has been successfully created.`);
@@ -194,11 +269,13 @@ export function UserManagementPage() {
       await updateUser(updated.apiId, {
         name: updated.name,
         email: updated.email,
-        username: updated.email,
-        role: updated.role,
-        status: updated.status,
-        phone: updated.phone,
-        jobTitle: updated.jobTitle,
+        role: updated.role.toLowerCase(),
+        ...(updated.role === "Supervisor"
+          ? { managerId: updated.managerId ? Number(updated.managerId) : null }
+          : {}),
+        ...(updated.role === "Staff"
+          ? { supervisorId: updated.supervisorId ? Number(updated.supervisorId) : null }
+          : {}),
       });
       await refreshUsers();
       showToast("success", "Updated Successfully", `${updated.name}'s profile has been saved.`);
@@ -346,7 +423,13 @@ export function UserManagementPage() {
 
       {/* Modals */}
       {modal.type === "add" && (
-        <AddUserModal totalCount={users.length} onClose={() => setModal({ type: "none" })} onSave={handleAdd} />
+        <AddUserModal
+          totalCount={users.length}
+          managers={managers.map((item) => ({ id: String(item.id), name: item.name }))}
+          supervisors={supervisors.map((item) => ({ id: String(item.id), name: item.name }))}
+          onClose={() => setModal({ type: "none" })}
+          onSave={handleAdd}
+        />
       )}
       {modal.type === "view" && (
         <ViewUserModal
@@ -358,6 +441,8 @@ export function UserManagementPage() {
       {modal.type === "edit" && (
         <EditUserModal
           user={modal.user}
+          managers={managers.map((item) => ({ id: String(item.id), name: item.name }))}
+          supervisors={supervisors.map((item) => ({ id: String(item.id), name: item.name }))}
           onClose={() => setModal({ type: "none" })}
           onSave={handleSaveEdit}
         />

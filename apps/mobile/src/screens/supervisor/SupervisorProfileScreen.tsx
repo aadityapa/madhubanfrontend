@@ -2,9 +2,8 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { font, radii } from "@madhuban/theme";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button } from "../../components/Button";
 import { RefreshableScrollView } from "../../components/RefreshableScrollView";
 import { useAuth } from "../../context/AuthContext";
 
@@ -195,7 +194,10 @@ export function SupervisorProfileScreen() {
           </View>
         </View>
 
-        <Button title="Secure Logout" variant="danger" onPress={logout} />
+        <Pressable style={styles.logoutButton} onPress={logout}>
+          <Ionicons name="log-out-outline" size={18} color="#FF3131" />
+          <Text style={styles.logoutButtonText}>Secure Logout</Text>
+        </Pressable>
       </RefreshableScrollView>
     </View>
   );
@@ -443,5 +445,23 @@ const styles = StyleSheet.create({
     color: "#A4B0C3",
     fontFamily: font.family.bold,
     fontSize: 12,
+  },
+  logoutButton: {
+    marginTop: 14,
+    marginHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 18,
+    backgroundColor: "#FFF1F1",
+    borderWidth: 1,
+    borderColor: "#FFD7D7",
+    paddingVertical: 16,
+  },
+  logoutButtonText: {
+    color: "#FF3131",
+    fontFamily: font.family.black,
+    fontSize: 17,
   },
 });

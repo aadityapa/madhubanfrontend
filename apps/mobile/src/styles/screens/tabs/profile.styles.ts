@@ -264,12 +264,27 @@ export const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 34,
   },
+  statValueCompact: {
+    color: "#1F2D46",
+    fontFamily: font.family.black,
+    fontSize: 18,
+    lineHeight: 22,
+    textAlign: "center",
+  },
   statLabel: {
     color: "#7F8EA6",
     fontFamily: font.family.bold,
     fontSize: 11,
     letterSpacing: 0.9,
     textTransform: "uppercase",
+  },
+  statLabelCompact: {
+    color: "#94A3B8",
+    fontFamily: font.family.bold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   skillsGrid: {
     flexDirection: "row",

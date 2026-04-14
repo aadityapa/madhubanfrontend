@@ -17,10 +17,14 @@ const FACILITIES = [
 
 export function EditUserModal({
   user,
+  managers,
+  supervisors,
   onClose,
   onSave,
 }: {
   user: User;
+  managers: Array<{ id: string; name: string }>;
+  supervisors: Array<{ id: string; name: string }>;
   onClose: () => void;
   onSave: (u: User) => void;
 }) {
@@ -31,16 +35,25 @@ export function EditUserModal({
     jobTitle: user.jobTitle ?? user.role,
     role: user.role,
     status: user.status,
+    managerId: user.managerId ?? "",
+    supervisorId: user.supervisorId ?? "",
     twoFactor: true,
     selectedFacilities: user.facilities ?? ["North Wing Plaza"],
   });
   const [errors, setErrors] = useState<
-    Partial<Record<"fullName" | "email" | "phone" | "jobTitle", string>>
+    Partial<Record<"fullName" | "email" | "phone" | "jobTitle" | "managerId" | "supervisorId", string>>
   >({});
 
   function update<K extends keyof typeof form>(key: K, val: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: val }));
-    if (key === "fullName" || key === "email" || key === "phone" || key === "jobTitle") {
+    if (
+      key === "fullName" ||
+      key === "email" ||
+      key === "phone" ||
+      key === "jobTitle" ||
+      key === "managerId" ||
+      key === "supervisorId"
+    ) {
       setErrors((current) => ({ ...current, [key]: undefined }));
     }
   }
@@ -55,11 +68,23 @@ export function EditUserModal({
   }
 
   function validate() {
-    const nextErrors: Partial<Record<"fullName" | "email" | "phone" | "jobTitle", string>> = {
+    const nextErrors: Partial<Record<"fullName" | "email" | "phone" | "jobTitle" | "managerId" | "supervisorId", string>> = {
       fullName: getRequiredError(form.fullName, "Please enter the user's full name.") ?? undefined,
       email: getEmailError(form.email) ?? undefined,
       jobTitle: getRequiredError(form.jobTitle, "Please enter the user's job title.") ?? undefined,
     };
+    if (form.role === "Supervisor") {
+      nextErrors.managerId = getRequiredError(
+        form.managerId,
+        "Please select a manager for this supervisor.",
+      ) ?? undefined;
+    }
+    if (form.role === "Staff") {
+      nextErrors.supervisorId = getRequiredError(
+        form.supervisorId,
+        "Please select a supervisor for this staff member.",
+      ) ?? undefined;
+    }
     if (String(form.phone || "").trim()) {
       nextErrors.phone = getIndianMobileError(form.phone) ?? undefined;
     }
@@ -78,6 +103,10 @@ export function EditUserModal({
       jobTitle: form.jobTitle.trim(),
       role: form.role,
       status: form.status,
+      managerId: form.managerId || undefined,
+      managerName: managers.find((item) => item.id === form.managerId)?.name,
+      supervisorId: form.supervisorId || undefined,
+      supervisorName: supervisors.find((item) => item.id === form.supervisorId)?.name,
       facilities: form.selectedFacilities,
     });
     onClose();
@@ -208,6 +237,38 @@ export function EditUserModal({
                 </select>
               </Field>
             </div>
+            {form.role === "Supervisor" ? (
+              <Field label="Assigned Manager" error={errors.managerId}>
+                <select
+                  style={{ ...es.input, ...(errors.managerId ? validationStyles.inputErrorBorder : null) }}
+                  value={form.managerId}
+                  onChange={(e) => update("managerId", e.target.value)}
+                >
+                  <option value="">Select a manager</option>
+                  {managers.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {form.role === "Staff" ? (
+              <Field label="Assigned Supervisor" error={errors.supervisorId}>
+                <select
+                  style={{ ...es.input, ...(errors.supervisorId ? validationStyles.inputErrorBorder : null) }}
+                  value={form.supervisorId}
+                  onChange={(e) => update("supervisorId", e.target.value)}
+                >
+                  <option value="">Select a supervisor</option>
+                  {supervisors.map((supervisor) => (
+                    <option key={supervisor.id} value={supervisor.id}>
+                      {supervisor.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
             <div style={es.toggleRow}>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--c-text)" }}>

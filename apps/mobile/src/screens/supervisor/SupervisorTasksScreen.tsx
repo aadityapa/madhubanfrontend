@@ -190,6 +190,14 @@ function formatTime(value: string | null | undefined) {
   });
 }
 
+function normalizeImageUri(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+  return encodeURI(trimmed);
+}
+
 function toUiStatus(value: string): ReviewTask["status"] {
   switch (value) {
     case "APPROVED":
@@ -434,6 +442,7 @@ function EvidenceCard({
   imageUrl?: string | null;
 }) {
   const isBefore = variant === "before";
+  const resolvedImageUrl = normalizeImageUri(imageUrl);
   const content = (
     <>
       <View
@@ -466,9 +475,9 @@ function EvidenceCard({
 
   return (
     <View style={styles.evidenceCard}>
-      {imageUrl && !missing ? (
+      {resolvedImageUrl && !missing ? (
         <ImageBackground
-          source={{ uri: imageUrl }}
+          source={{ uri: resolvedImageUrl }}
           imageStyle={styles.evidenceImage}
           style={[styles.evidencePreview, styles.evidencePreviewFilled]}
         >
@@ -524,7 +533,7 @@ function ReviewTaskModal({
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+        <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 16) + 72 }]}>
           <View style={styles.modalHeaderRow}>
             <View>
               <Text style={styles.modalTitle}>Review Task</Text>
@@ -569,7 +578,7 @@ function ReviewTaskModal({
                   label="AFTER"
                   time={task.afterTime}
                   variant="after"
-                  missing={!task.afterTime}
+                  missing={!task.afterPhotoUrl}
                   imageUrl={task.afterPhotoUrl}
                 />
               </View>
@@ -684,9 +693,13 @@ function ReviewTaskModal({
             disabled={confirmDisabled}
             onPress={onConfirm}
           >
-            <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-            <Text style={styles.confirmButtonText}>
-              {sendBack ? "Confirm Send Back To Maker" : "Confirm Approval"}
+            <Ionicons
+              name={sendBack ? "return-up-back-outline" : "checkmark"}
+              size={18}
+              color="#FFFFFF"
+            />
+            <Text style={styles.confirmButtonText} numberOfLines={1}>
+              {sendBack ? "Confirm Send Back" : "Confirm Approval"}
             </Text>
           </Pressable>
         </View>
@@ -806,10 +819,10 @@ export function SupervisorTasksScreen() {
       assigneeName: selectedTaskDetail.maker.name,
       slot: `${selectedTaskDetail.task.startTime ?? "--"} - ${selectedTaskDetail.task.endTime ?? "--"}`,
       location: `${selectedTaskDetail.zone.propertyName}${selectedTaskDetail.zone.floorNo ? `, Floor ${selectedTaskDetail.zone.floorNo}` : ""}`,
-      beforeTime: formatTime(selectedTaskDetail.dailyTask.startedAt),
-      afterTime: formatTime(selectedTaskDetail.dailyTask.completedAt),
-      beforePhotoUrl: selectedTaskDetail.photos.beforePhotoUrl,
-      afterPhotoUrl: selectedTaskDetail.photos.afterPhotoUrl,
+      beforeTime: formatTime(selectedTaskDetail.dailyTask.startedAt) ?? base.beforeTime,
+      afterTime: formatTime(selectedTaskDetail.dailyTask.completedAt) ?? base.afterTime,
+      beforePhotoUrl: normalizeImageUri(selectedTaskDetail.photos.beforePhotoUrl) ?? base.beforePhotoUrl,
+      afterPhotoUrl: normalizeImageUri(selectedTaskDetail.photos.afterPhotoUrl) ?? base.afterPhotoUrl,
       issueTime: formatTime(selectedTaskDetail.approval.submittedAt) ?? base.issueTime,
     };
   }, [selectedTaskDetail, selectedTaskId, tasksState]);
@@ -944,19 +957,46 @@ export function SupervisorTasksScreen() {
                   <Pressable
                     key={filter}
                     onPress={() => setSelectedStatusFilter(filter)}
-                  style={[
-                    styles.statusChip,
-                    filter === "All"
-                      ? styles.statusAll
-                      : filter === "Needs Review"
-                        ? styles.statusNeedsReview
-                        : filter === "Sent Back"
-                          ? styles.statusSentBack
-                          : styles.statusApproved,
-                    active && styles.statusChipActive,
-                  ]}
+                    style={[
+                      styles.statusChip,
+                      filter === "All"
+                        ? styles.statusAll
+                        : filter === "Needs Review"
+                          ? styles.statusNeedsReview
+                          : filter === "Sent Back"
+                            ? styles.statusSentBack
+                            : styles.statusApproved,
+                      active && styles.statusChipActive,
+                      active &&
+                        (filter === "All"
+                          ? styles.statusAllActive
+                          : filter === "Needs Review"
+                            ? styles.statusNeedsReviewActive
+                            : filter === "Sent Back"
+                              ? styles.statusSentBackActive
+                              : styles.statusApprovedActive),
+                    ]}
                   >
-                    <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                    <Text
+                      style={[
+                        styles.statusChipText,
+                        filter === "All"
+                          ? styles.statusAllText
+                          : filter === "Needs Review"
+                            ? styles.statusNeedsReviewText
+                            : filter === "Sent Back"
+                              ? styles.statusSentBackText
+                              : styles.statusApprovedText,
+                        active &&
+                          (filter === "All"
+                            ? styles.statusAllTextActive
+                            : filter === "Needs Review"
+                              ? styles.statusNeedsReviewTextActive
+                              : filter === "Sent Back"
+                                ? styles.statusSentBackTextActive
+                                : styles.statusApprovedTextActive),
+                      ]}
+                    >
                       {filter}
                     </Text>
                   </Pressable>
@@ -1075,7 +1115,7 @@ export function SupervisorTasksScreen() {
       />
 
       {toastMessage ? (
-        <View style={[styles.toastWrap, { bottom: insets.bottom + 88 }]}>
+        <View style={[styles.toastWrap, { top: insets.top + 12 }]}>
           <View style={styles.toastCard}>
             <Ionicons
               name={toastMessage.includes("Approved") ? "checkmark-circle-outline" : "return-up-back-outline"}
@@ -1220,7 +1260,6 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 26,
     gap: 12,
-    flexGrow: 1,
   },
   statusFilterRow: {
     flexDirection: "row",
@@ -1246,24 +1285,61 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2C42",
     borderColor: "#1F2C42",
   },
+  statusAllActive: {
+    backgroundColor: "#172338",
+    borderColor: "#172338",
+  },
   statusNeedsReview: {
     backgroundColor: "#FFF7E8",
     borderColor: "#FFD690",
+  },
+  statusNeedsReviewActive: {
+    backgroundColor: "#FFD690",
+    borderColor: "#FFB84D",
   },
   statusSentBack: {
     backgroundColor: "#FFF0EB",
     borderColor: "#FFC5AF",
   },
+  statusSentBackActive: {
+    backgroundColor: "#FFC5AF",
+    borderColor: "#FF9A73",
+  },
   statusApproved: {
     backgroundColor: "#EAFBF2",
     borderColor: "#A6E7C2",
+  },
+  statusApprovedActive: {
+    backgroundColor: "#A6E7C2",
+    borderColor: "#63D69C",
   },
   statusChipText: {
     fontFamily: font.family.bold,
     fontSize: 12,
   },
-  statusChipTextActive: {
+  statusAllText: {
     color: "#FFFFFF",
+  },
+  statusAllTextActive: {
+    color: "#FFFFFF",
+  },
+  statusNeedsReviewText: {
+    color: "#7A4B00",
+  },
+  statusNeedsReviewTextActive: {
+    color: "#5D3500",
+  },
+  statusSentBackText: {
+    color: "#9A4A2C",
+  },
+  statusSentBackTextActive: {
+    color: "#7A3114",
+  },
+  statusApprovedText: {
+    color: "#197A49",
+  },
+  statusApprovedTextActive: {
+    color: "#0F5E36",
   },
   cardWrap: {
     borderRadius: 24,
@@ -1704,6 +1780,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
+    zIndex: 20,
+    elevation: 20,
   },
   toastCard: {
     minHeight: 52,

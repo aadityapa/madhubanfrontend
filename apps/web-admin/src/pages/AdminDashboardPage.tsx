@@ -8,6 +8,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useShellHeader } from "../context/ShellHeaderContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -168,15 +169,17 @@ function AlertBadge({ level }: { level: "URGENT" | "MEDIUM" }) {
 
 // ─── Page header actions ──────────────────────────────────────────────────────
 function DashboardActions() {
+  const navigate = useNavigate();
+
   return (
     <div style={{ display: "flex", gap: 8 }}>
-      <button style={cs.actionBtn}>
+      <button style={cs.actionBtn} onClick={() => navigate("/tasks")}>
         <Plus size={14} /><span>Add Task</span>
       </button>
-      <button style={cs.actionBtn}>
+      <button style={cs.actionBtn} onClick={() => navigate("/users")}>
         <UserPlus size={14} /><span>Add User</span>
       </button>
-      <button style={cs.actionBtn}>
+      <button style={cs.actionBtn} onClick={() => navigate("/properties")}>
         <Warehouse size={14} /><span>Add Property</span>
       </button>
     </div>

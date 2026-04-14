@@ -185,6 +185,29 @@ export interface StaffAttendanceSubmitPayload {
   selfie?: UploadableFile;
 }
 
+async function appendUploadableFile(
+  formData: FormData,
+  fieldName: string,
+  file: UploadableFile,
+): Promise<void> {
+  if (
+    file &&
+    typeof file === "object" &&
+    "uri" in file &&
+    typeof file.uri === "string"
+  ) {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    formData.append(fieldName, blob, file.name);
+    return;
+  }
+
+  (formData as unknown as { append(name: string, value: UploadableFile): void }).append(
+    fieldName,
+    file,
+  );
+}
+
 export async function getStaffProfile(): Promise<StaffProfileResponse> {
   const res = await fetch(`${API()}/staff/profile`, { headers: getAuthHeaders() });
   return unwrapApiData<StaffProfileResponse>(await readJsonOrThrow(res));
@@ -212,10 +235,7 @@ export async function submitStaffAttendance(
   formData.append("latitude", String(payload.latitude));
   formData.append("longitude", String(payload.longitude));
   if (payload.selfie) {
-    (formData as unknown as { append(name: string, value: UploadableFile): void }).append(
-      "selfie",
-      payload.selfie,
-    );
+    await appendUploadableFile(formData, "selfie", payload.selfie);
   }
   const headers = getAuthHeaders();
   delete headers["Content-Type"];
@@ -245,10 +265,7 @@ async function uploadPhoto(
   photo: UploadableFile,
 ): Promise<{ beforePhotoUrl?: string; afterPhotoUrl?: string; approval?: unknown }> {
   const formData = new FormData();
-  (formData as unknown as { append(name: string, value: UploadableFile): void }).append(
-    "photo",
-    photo,
-  );
+  await appendUploadableFile(formData, "photo", photo);
   const headers = getAuthHeaders();
   delete headers["Content-Type"];
   const res = await fetch(url, {

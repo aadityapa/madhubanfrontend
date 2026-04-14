@@ -6,6 +6,8 @@ export interface User {
   apiId: string;
   name: string;
   email: string;
+  password?: string;
+  confirmPassword?: string;
   phone?: string;
   jobTitle?: string;
   role: UserRole;
@@ -14,6 +16,10 @@ export interface User {
   initials: string;
   avatarColor: string;
   department?: string;
+  managerId?: string;
+  managerName?: string;
+  supervisorId?: string;
+  supervisorName?: string;
   employeeId?: string;
   reportsTo?: string;
   workAddress?: string;

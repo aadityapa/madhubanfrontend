@@ -21,7 +21,7 @@
         "simulator": false
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE": "https://madhuban360-backend.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://madhuban360-backend.onrender.com"
       }
     },
     "production": {
