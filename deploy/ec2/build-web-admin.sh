@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Build static web-admin on Linux (EC2). Run from repository root.
+# Build static web-admin on Linux (EC2). Run from repository root (the folder that contains package.json and pnpm-workspace.yaml).
+# Install first: corepack enable && pnpm install --frozen-lockfile
 # Ensure root `.env` sets VITE_API_BASE_URL to your API origin (e.g. https://nexyyra.com), or export it before this script.
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

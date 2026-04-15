@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "turbo run build",
+    "build:web-admin": "turbo run build --filter=@madhuban/web-admin",
     "dev": "turbo run dev --filter=@madhuban/mobile --filter=@madhuban/web-admin",
     "dev:apps": "turbo run dev --filter=@madhuban/mobile --filter=@madhuban/web-admin",
     "start": "turbo run dev --filter=@madhuban/mobile --filter=@madhuban/web-admin",

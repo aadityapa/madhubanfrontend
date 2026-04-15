@@ -175,13 +175,14 @@ importers:
         version: 5.9.3
 
   packages/theme:
-    devDependencies:
+    dependencies:
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
       react:
         specifier: ^19.0.0
         version: 19.2.4
+    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
