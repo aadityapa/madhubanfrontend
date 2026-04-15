@@ -294,12 +294,68 @@ export async function createTask(data: unknown): Promise<unknown> {
   return readJsonOrThrow(res);
 }
 
-export async function updateTask(): Promise<unknown> {
-  throw new Error("Master task update is not documented by the admin API.");
+export async function updateTask(
+  id: string | number,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  const apiData: Record<string, unknown> = {
+    taskName: data.title ?? data.taskName ?? "",
+    description: data.description == null ? "" : String(data.description),
+    assigneeId:
+      data.assigneeId === "" || data.assigneeId == null
+        ? undefined
+        : data.assigneeId,
+    priority: data.priority
+      ? String(data.priority).toUpperCase()
+      : "NORMAL",
+    locationFloor:
+      data.locationFloor == null || data.locationFloor === ""
+        ? undefined
+        : String(data.locationFloor),
+    startTime:
+      data.startTime == null || data.startTime === ""
+        ? undefined
+        : String(data.startTime),
+    endTime:
+      data.endTime == null || data.endTime === ""
+        ? undefined
+        : String(data.endTime),
+    timeDuration:
+      data.timeDuration == null || data.timeDuration === ""
+        ? undefined
+        : data.timeDuration,
+    frequency:
+      data.frequency == null || data.frequency === ""
+        ? undefined
+        : String(data.frequency),
+  };
+  if (data.status != null && data.status !== "") {
+    apiData.status = String(data.status).toLowerCase();
+  }
+  const res = await fetch(
+    `${API_TASKS()}/${encodeURIComponent(String(id))}`,
+    {
+      method: "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(apiData),
+    },
+  );
+  return readJsonOrThrow(res);
 }
 
-export async function updateTaskStatus(): Promise<unknown> {
-  throw new Error("Master task status update is not documented by the admin API.");
+export async function updateTaskStatus(
+  id: string | number,
+  status: string,
+): Promise<unknown> {
+  const res = await fetch(
+    `${API_TASKS()}/${encodeURIComponent(String(id))}/status`,
+    {
+      method: "PATCH",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: String(status).toLowerCase() }),
+    },
+  );
+  return readJsonOrThrow(res);
 }
 
 export async function deleteTask(): Promise<unknown> {

@@ -186,83 +186,22 @@ function DashboardActions() {
   );
 }
 
-function DashboardSkeleton() {
-  return (
-    <div>
-      <SkeletonTheme />
-      <div style={cs.pageHeader}>
-        <div>
-          <SkeletonBlock width={220} height={28} />
-          <SkeletonBlock width={280} height={12} style={{ marginTop: 10 }} />
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <SkeletonBlock width={104} height={36} radius={10} />
-          <SkeletonBlock width={104} height={36} radius={10} />
-          <SkeletonBlock width={120} height={36} radius={10} />
-        </div>
-      </div>
-
-      <div style={cs.metricsGrid}>
-        {Array.from({ length: 4 }, (_, index) => (
-          <SkeletonMetricCard key={index} />
-        ))}
-      </div>
-
-      <div style={cs.chartsRow}>
-        {Array.from({ length: 2 }, (_, index) => (
-          <div key={index} style={cs.card}>
-            <div style={cs.cardHeader}>
-              <SkeletonBlock width={160} height={16} />
-              <SkeletonBlock width={88} height={12} />
-            </div>
-            <SkeletonBlock width="100%" height={100} radius={12} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
-              {Array.from({ length: 4 }, (__unused, labelIndex) => (
-                <SkeletonBlock key={labelIndex} width={48} height={10} />
-              ))}
-            </div>
-            <SkeletonBlock width="34%" height={24} style={{ marginTop: 18 }} />
-            <SkeletonBlock width="52%" height={12} style={{ marginTop: 10 }} />
-          </div>
-        ))}
-      </div>
-
-      <div style={cs.bottomGrid}>
-        <div style={cs.card}>
-          <div style={cs.cardHeader}>
-            <SkeletonBlock width={120} height={16} />
-            <SkeletonBlock width={64} height={12} />
-          </div>
-          <SkeletonCardList count={3} />
-        </div>
-        <div style={cs.card}>
-          <div style={cs.cardHeader}>
-            <SkeletonBlock width={128} height={16} />
-            <SkeletonBlock width={72} height={12} />
-          </div>
-          <SkeletonCardList count={4} lines={2} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export function AdminDashboardPage() {
-  const [metrics, setMetrics] = useState<Metrics>(MOCK_METRICS);
-  const [pipelineData, setPipelineData] = useState<number[]>(PIPELINE_DATA);
-  const [pipelineSummary, setPipelineSummary] = useState({
+  const [metrics] = useState<Metrics>(MOCK_METRICS);
+  const [pipelineData] = useState<number[]>(PIPELINE_DATA);
+  const [pipelineSummary] = useState({
     value: 42000,
     trend: 12.5,
     label: "from last month",
   });
-  const [revenueData, setRevenueData] = useState<number[]>(REVENUE_DATA);
-  const [revenueSummary, setRevenueSummary] = useState({
+  const [revenueData] = useState<number[]>(REVENUE_DATA);
+  const [revenueSummary] = useState({
     value: 128500,
     trend: 8.2,
     label: "Year-to-date",
   });
-  const [alerts, setAlerts] = useState<DashboardAlert[]>(
+  const [alerts] = useState<DashboardAlert[]>(
     ALERTS.map((alert) => ({
       id: alert.id,
       title: alert.title,
@@ -274,7 +213,7 @@ export function AdminDashboardPage() {
       urgency: alert.level,
     })),
   );
-  const [activity, setActivity] = useState<DashboardActivityItem[]>(
+  const [activity] = useState<DashboardActivityItem[]>(
     ACTIVITY.map((item) => {
       const [source, timeAgo] = item.meta.split(" · ");
       return {

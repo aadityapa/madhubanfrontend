@@ -45,8 +45,8 @@ export default function App() {
               </Route>
             </Route>
 
-            {/* Redirect root → dashboard, everything else → login */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Default entry is login; unknown paths fall back to login */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
           {/* Global toast overlay – rendered outside the shell so it's always on top */}

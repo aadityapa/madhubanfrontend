@@ -33,6 +33,7 @@ import {
   getPropertySummary,
   getReports,
   getTasks,
+  type PropertyRecord,
 } from "@madhuban/api";
 import { SkeletonBlock, SkeletonCardList, SkeletonTheme } from "../components/Skeleton";
 import {
@@ -738,9 +739,10 @@ export function PropertyManagementPage() {
 
   useShellHeader({ showSearch: true });
 
-  function normalizeProperty(p: Record<string, unknown>, idx: number): Property {
-    const type = String(p.propertyType ?? p.category ?? "Commercial");
-    const amc = String(p.amcStatus ?? "Active");
+  function normalizeProperty(p: PropertyRecord | Record<string, unknown>, idx: number): Property {
+    const raw = p as Record<string, unknown>;
+    const type = String(raw.propertyType ?? raw.category ?? "Commercial");
+    const amc = String(raw.amcStatus ?? "Active");
     const mapType: PropertyType =
       type.toLowerCase().includes("res") ? "Residential" :
       type.toLowerCase().includes("ind") ? "Industrial" : "Commercial";
@@ -749,13 +751,13 @@ export function PropertyManagementPage() {
       amc.toLowerCase().includes("expire") ? "Expired" : "Active";
 
     return {
-      id: idx + 1,
-      name: String(p.propertyName ?? p.name ?? "—"),
-      address: String(p.location ?? [p.city, p.stateProvince].filter(Boolean).join(", ") ?? "—"),
+      id: Number(raw.id ?? idx + 1) || idx + 1,
+      name: String(raw.propertyName ?? raw.name ?? "—"),
+      address: String(raw.location ?? [raw.city, raw.stateProvince].filter(Boolean).join(", ") ?? "—"),
       type: mapType,
-      totalUnits: Number(p.totalUnits ?? 245) || 0,
-      unitsSold: Number(p.unitsSold ?? 0) || 0,
-      unitsUnsold: Number(p.unitsUnsold ?? 0) || 0,
+      totalUnits: Number(raw.totalUnits ?? 245) || 0,
+      unitsSold: Number(raw.unitsSold ?? 0) || 0,
+      unitsUnsold: Number(raw.unitsUnsold ?? 0) || 0,
       amcStatus: mapAmc,
       gradFrom: "#1e3a5f",
       gradTo: "#2563eb",
@@ -841,7 +843,7 @@ export function PropertyManagementPage() {
       ]);
 
       if (Array.isArray(propsRaw) && propsRaw.length) {
-        setProperties(propsRaw.map((p, idx) => normalizeProperty(p as Record<string, unknown>, idx)));
+        setProperties(propsRaw.map((p, idx) => normalizeProperty(p, idx)));
       }
 
       if (Array.isArray(propSum)) {

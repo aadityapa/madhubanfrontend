@@ -231,7 +231,7 @@ export function EditUserModal({
                 </select>
               </Field>
               <Field label="Preferred Language">
-                <select style={es.input} value="en" readOnly>
+                <select style={es.input} value="en" disabled>
                   <option value="en">English (US)</option>
                   <option value="hi">Hindi</option>
                 </select>

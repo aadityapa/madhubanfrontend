@@ -15,7 +15,7 @@ export default function Index() {
   }
 
   if (!token) {
-    return <Redirect href="/(auth)/splash" />;
+    return <Redirect href="/(auth)/login" />;
   }
 
   return <Redirect href={getRoleHomePath(role)} />;

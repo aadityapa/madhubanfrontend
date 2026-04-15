@@ -41,8 +41,9 @@ export function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
-export function getRequiredError(rawValue: string, message = validationMessages.required) {
-  return String(rawValue || "").trim() ? null : message;
+export function getRequiredError(rawValue: string, message?: string) {
+  const resolved = message ?? validationMessages.required;
+  return String(rawValue || "").trim() ? null : resolved;
 }
 
 export function getIndianMobileError(rawValue: string, requiredMessage?: string) {

@@ -2,7 +2,7 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const rootDir = path.resolve(__dirname, "../..");
   const env = loadEnv(mode, rootDir, "");
   const target =
@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     env.VITE_API_URL ||
     env.VITE_API_BASE_URL;
 
-  if (!target) {
+  if (command === "serve" && !target) {
     throw new Error(
       "Missing API base URL. Set VITE_API_BASE_URL (or VITE_WEB_ADMIN_API_URL) in the root .env.",
     );
@@ -21,12 +21,14 @@ export default defineConfig(({ mode }) => {
     envDir: rootDir,
     plugins: [react()],
     server: {
-      proxy: {
-        "/api": {
-          target: target.replace(/\/+$/, ""),
-          changeOrigin: true,
-        },
-      },
+      proxy: target
+        ? {
+            "/api": {
+              target: target.replace(/\/+$/, ""),
+              changeOrigin: true,
+            },
+          }
+        : undefined,
     },
   };
 });

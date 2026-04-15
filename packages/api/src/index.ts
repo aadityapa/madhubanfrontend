@@ -53,6 +53,15 @@ export {
   getDepartments,
   getDepartmentById,
 } from "./users";
+export type {
+  AdminUserRecord,
+  ManagerRecord,
+  RoleRecord,
+  StaffRecord,
+  SupervisorRecord,
+  UserListResponse,
+  UserRelation,
+} from "./users";
 export {
   getProperties,
   getPropertyById,
@@ -68,6 +77,7 @@ export {
   getReports,
   getReportsAnalytics,
 } from "./properties";
+export type { PropertyRecord } from "./properties";
 export {
   getCurrentUser,
   changePassword,

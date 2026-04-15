@@ -42,53 +42,6 @@ import {
   SkeletonTheme,
 } from "../components/Skeleton";
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const INITIAL_USERS: User[] = [
-  {
-    id: 1, apiId: "demo-1", name: "Johnathan Doe", email: "j.doe@facilitymanagement.com",
-    phone: "+1 (555) 902-3481", jobTitle: "Senior Facility Manager",
-    role: "Admin", status: "Active", lastLogin: "2 hours ago",
-    initials: "JD", avatarColor: "#6366f1",
-    department: "Operations & Maintenance", employeeId: "FMS-8829-JD",
-    reportsTo: "Sarah Jenkins",
-    workAddress: "102 Main Street, Central Plaza, North Wing, Suite 405",
-    facilities: ["North Wing Plaza", "Central Tower"],
-  },
-  {
-    id: 2, apiId: "demo-2", name: "Sarah Chen", email: "s.chen@facilitymanagement.com",
-    phone: "+1 (555) 234-5678", jobTitle: "Facility Manager",
-    role: "Manager", status: "Active", lastLogin: "5 mins ago",
-    initials: "SC", avatarColor: "#0ea5e9",
-    department: "Facilities", facilities: ["North Wing Plaza", "Downtown Tech Hub"],
-  },
-  {
-    id: 3, apiId: "demo-3", name: "Mike Ross", email: "m.ross@facilitymanagement.com",
-    phone: "+1 (555) 345-6789", jobTitle: "Operations Supervisor",
-    role: "Supervisor", status: "Suspended", lastLogin: "1 day ago",
-    initials: "MR", avatarColor: "#f59e0b",
-    department: "Operations", facilities: ["East Logistics Center"],
-  },
-  {
-    id: 4, apiId: "demo-4", name: "Emily Watson", email: "e.watson@facilitymanagement.com",
-    phone: "+1 (555) 456-7890", jobTitle: "Maintenance Staff",
-    role: "Staff", status: "Active", lastLogin: "3 days ago",
-    initials: "EW", avatarColor: "#10b981",
-    department: "Maintenance", facilities: ["Southern Solar Farm"],
-  },
-  {
-    id: 5, apiId: "demo-5", name: "Rajiv Malhotra", email: "r.malhotra@facilitymanagement.com",
-    role: "Supervisor", status: "Active", lastLogin: "Just now",
-    initials: "RM", avatarColor: "#8b5cf6", department: "Security",
-    facilities: [],
-  },
-  {
-    id: 6, apiId: "demo-6", name: "Priya Nair", email: "p.nair@facilitymanagement.com",
-    role: "Staff", status: "Active", lastLogin: "10 mins ago",
-    initials: "PN", avatarColor: "#ec4899", department: "Housekeeping",
-    facilities: [],
-  },
-];
-
 type ModalState =
   | { type: "none" }
   | { type: "add" }
