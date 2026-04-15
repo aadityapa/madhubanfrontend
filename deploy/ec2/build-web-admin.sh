@@ -15,4 +15,4 @@ pnpm install --frozen-lockfile
 pnpm exec turbo run build --filter=@madhuban/web-admin
 
 echo "Output: $ROOT/apps/web-admin/dist"
-echo "Copy to nginx root, e.g.: sudo rsync -a --delete $ROOT/apps/web-admin/dist/ /var/www/madhuban360-admin/"
+echo "Publish: sudo bash $ROOT/deploy/ec2/publish-web-admin.sh"
