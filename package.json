@@ -2,6 +2,10 @@
   "name": "madhuban360",
   "private": true,
   "packageManager": "pnpm@10.32.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --filter=@madhuban/mobile --filter=@madhuban/web-admin",
